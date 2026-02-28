@@ -45,7 +45,7 @@ def _to_seconds(hhmmss: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def load_gtfs(source_dir: Optional[str] = r"data\gtfs\smtuc") -> GTFSData:
+def load_gtfs(source_dir: Optional[str] = r"data\smtuc") -> GTFSData:
     if not source_dir:
         raise ValueError("source_dir é obrigatório para carregar GTFS real.")
 
@@ -117,7 +117,7 @@ def extract_or_copy_gtfs(src: Path, dst: Path) -> None:
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Integrar GTFS SMTUC no projeto")
     parser.add_argument("--source", required=True, help="Caminho para GTFS (.zip ou pasta)")
-    parser.add_argument("--target", default=r"data\gtfs\smtuc", help="Pasta destino")
+    parser.add_argument("--target", default=r"data\smtuc", help="Pasta destino")
     args = parser.parse_args()
 
     # src/smtuc_mvp/gtfs.py -> raiz = parents[2]
