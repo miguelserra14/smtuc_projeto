@@ -45,17 +45,42 @@ def _to_seconds(hhmmss: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def load_gtfs(source_dir: Optional[str] = r"data\smtuc") -> GTFSData:
-    if not source_dir:
-        raise ValueError("source_dir é obrigatório para carregar GTFS real.")
+def _looks_like_gtfs_folder(folder: Path) -> bool:
+    return folder.exists() and folder.is_dir() and all((folder / f).exists() for f in REQUIRED_FILES)
 
-    source = Path(source_dir)
-    if not source.is_absolute():
-        source = Path.cwd() / source
-    source = source.resolve()
 
-    if not source.exists() or not source.is_dir():
-        raise FileNotFoundError(f"Diretório GTFS inválido: {source}")
+def _find_gtfs_dir(dataset: str, root: Path) -> Path:
+    candidates = [
+        root / "data" / dataset,  # ex.: data/metrobus
+    ]
+
+    for base in candidates:
+        if _looks_like_gtfs_folder(base):
+            return base
+        if base.exists() and base.is_dir():
+            for sub in sorted(p for p in base.rglob("*") if p.is_dir()):
+                if _looks_like_gtfs_folder(sub):
+                    return sub
+
+    raise FileNotFoundError(f"Dataset GTFS não encontrado/incompleto: {dataset}")
+
+
+def _resolve_source_dir(source_dir: Optional[str], dataset: str) -> Path:
+    root = Path(__file__).resolve().parents[2]  # raiz do projeto
+
+    if source_dir:
+        p = Path(source_dir)
+        if not p.is_absolute():
+            p = (root / p).resolve()
+        if not _looks_like_gtfs_folder(p):
+            raise FileNotFoundError(f"Diretório GTFS inválido: {p}")
+        return p
+
+    return _find_gtfs_dir(dataset, root)
+
+
+def load_gtfs(source_dir: Optional[str] = None, dataset: str = "nd") -> GTFSData:
+    source = _resolve_source_dir(source_dir=source_dir, dataset=dataset)
 
     frames: dict[str, pd.DataFrame] = {}
     for name in REQUIRED_GTFS + OPTIONAL_GTFS:
@@ -65,6 +90,11 @@ def load_gtfs(source_dir: Optional[str] = r"data\smtuc") -> GTFSData:
     if missing:
         missing_list = ", ".join(f"{name}.txt" for name in missing)
         raise ValueError(f"Arquivos GTFS obrigatórios em falta: {missing_list}")
+
+    missing = [name for name in OPTIONAL_GTFS if frames[name].empty]
+    if missing:
+        missing_list = ", ".join(f"{name}.txt" for name in missing)
+        print(f"Arquivos GTFS opcionais em falta: {missing_list}")
 
     st = frames["stop_times"]
     for col in ("arrival_time", "departure_time"):
@@ -115,19 +145,30 @@ def extract_or_copy_gtfs(src: Path, dst: Path) -> None:
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="Integrar GTFS SMTUC no projeto")
-    parser.add_argument("--source", required=True, help="Caminho para GTFS (.zip ou pasta)")
-    parser.add_argument("--target", default=r"data\smtuc", help="Pasta destino")
+    parser = argparse.ArgumentParser(description="GTFS utilitário")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_int = sub.add_parser("integrate", help="Integrar GTFS (.zip/pasta) para data/")
+    p_int.add_argument("--source", required=True, help="Caminho para GTFS (.zip ou pasta)")
+    p_int.add_argument("--target", default=r"data", help="Pasta destino")
+
+    p_ins = sub.add_parser("inspect", help="Carregar GTFS já existente em data/")
+    p_ins.add_argument("--dataset", default="smtuc", help="smtuc | metrobus")
+    p_ins.add_argument("--source-dir", default=None, help="Override de diretório GTFS")
+
     args = parser.parse_args()
-
-    # src/smtuc_mvp/gtfs.py -> raiz = parents[2]
     root = Path(__file__).resolve().parents[2]
-    source = Path(args.source).expanduser().resolve()
-    target = (root / args.target).resolve()
 
-    extract_or_copy_gtfs(source, target)
-    print(f"GTFS integrado em: {target}")
+    if args.cmd == "integrate":
+        source = Path(args.source).expanduser().resolve()
+        target = (root / args.target).resolve()
+        extract_or_copy_gtfs(source, target)
+        print(f"GTFS integrado em: {target}")
+        return
 
+    gtfs = load_gtfs(source_dir=args.source_dir, dataset=args.dataset)
+    print(f"dataset={args.dataset}")
+    print(f"routes={len(gtfs.routes)} trips={len(gtfs.trips)} stops={len(gtfs.stops)} stop_times={len(gtfs.stop_times)}")
 
 if __name__ == "__main__":
     _main()
