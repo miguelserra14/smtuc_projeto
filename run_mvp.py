@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-
+"""
 from src.smtuc_mvp.pipeline import RunConfig, run_pipeline
 
 
@@ -61,3 +61,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+"""
