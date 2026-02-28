@@ -1,81 +1,75 @@
 # MVP — Alocação eficiente de autocarros e metrobus
 
-Este projeto cria um MVP para simular e otimizar alocação de frota por linha e por hora.
+visa responder a questao: agora que o metrobus faz parte da mobilidade em coimbra, como adaptar os smtuc a esta mudanca de forma a cobrir as suas mais conhecidas e habituais lacunas, assim como nao so se adaptar a coimbra de hoje mas a de amanha
 
 ## to do :
-- dados: corrigir e limprar dados metrobus: criar shapes.yxy, corrigir agency, feed_info, etc
+- dados:
+- corrigir e limpar dados metrobus: locais das paragens, corrigir horarios
+- atualizar dados smtuc: pq e que da erro no dados.gov?
 
-## O que o MVP faz
+- probe:
+- limpar slop: evitar duplicados e fazer com que seja mais facil testar eustoes como:
+- como ir de ponto a a b no horario x?
+- quais as paragens mais proximas de um ponto a e b?
+- qual o alcance de uma paragem em 15min em varios horarios
+- vista por linha: frequencia, overlap com o metrobus
 
-- Lê GTFS (`routes.txt`, `trips.txt`, `stop_times.txt`, `stops.txt`)
-- Usa procura real por hora (`demand_csv`) **ou** gera procura sintética
-- Otimiza número de veículos por linha/hora com `OR-Tools`
-- Gera saídas comparáveis para decisão operacional
-- Renderiza mapa HTML com linhas e paragens
+- visualização
+- meter tudo num mapa : linhas, paragens, so smtuc, so metrobus
+- conseguir visualizar cada linha e comparar overlap com o metrobus, dar estatisticas em percentagem
 
-## Estrutura
 
-- `run_mvp.py`: ponto de entrada
-- `src/smtuc_mvp/gtfs.py`: ingestão GTFS + dados sintéticos
-- `src/smtuc_mvp/optimizer.py`: modelo de otimização e KPIs
-- `src/smtuc_mvp/map_viz.py`: visualização de rede
-- `src/smtuc_mvp/pipeline.py`: orquestração completa
+# MVP — Alocação eficiente de autocarros e metrobus (Coimbra)
 
-## Setup
+## Enquadramento
 
-```bash
-python -m venv .venv
-.venv\\Scripts\\activate
-pip install -r requirements.txt
-```
+Este projeto procura responder à pergunta:
 
-## Execução rápida (sem GTFS, dados sintéticos)
+**Agora que o Metrobus faz parte da mobilidade em Coimbra, como adaptar os SMTUC para cobrir lacunas atuais e preparar a cidade para necessidades futuras?**
 
-```bash
-python run_mvp.py
-```
+## Objetivos do MVP
 
-## Execução com GTFS real
+- Integrar e validar dados GTFS de **SMTUC** e **Metrobus**.
+- Comparar cobertura e oferta entre as duas redes.
+- Testar trajetos reais (A → B) por dia e hora.
+- Apoiar decisões de ajuste de linhas e frequências.
 
-```bash
-python run_mvp.py --gtfs-dir "C:/dados/gtfs_smtuc" --fleet 85 --bus-capacity 72 --metrobus-capacity 120
-```
+## To-Do
 
-## Execução com procura observada
+### 1: Dados
 
-Cria um CSV com colunas:
+- [ ] Corrigir e limpar dados do Metrobus:
+  - localização das paragens;
+  - consistência de horários.
+- [ ] Atualizar dados SMTUC:
+  - investigar erro no `dados.gov`.
+- [ ] Validar consistência GTFS:
+  - `stops`, `trips`, `stop_times`, `calendar`, `calendar_dates`.
 
-- `route_id`
-- `hour` (0-23)
-- `demand_pax`
+### 2: Probe (análise)
 
-Exemplo:
+- [ ] Limpar ruído e evitar duplicados nos resultados.
+- [ ] Facilitar testes de perguntas como:
+  - como ir de ponto A para B no horário X?
+  - quais as paragens mais próximas de A e de B?
+  - qual o alcance de uma paragem em 15 min em diferentes horários?
+  - vista por linha: frequência e overlap com Metrobus.
+- [ ] Melhorar pesquisa para incluir transbordos (além de trajetos diretos).
 
-```csv
-route_id,hour,demand_pax
-R1,8,520
-R1,9,430
-MB,8,980
-```
+### 3: Visualização
 
-Depois roda:
+- [ ] Colocar tudo num mapa:
+  - linhas;
+  - paragens;
+  - filtro SMTUC;
+  - filtro Metrobus.
+- [ ] Comparar cada linha com overlap Metrobus.
+- [ ] Mostrar estatísticas percentuais por linha/corredor.
 
-```bash
-python run_mvp.py --gtfs-dir "C:/dados/gtfs_smtuc" --demand-csv "C:/dados/demand.csv"
-```
+## Resultado esperado
 
-## Outputs
+No fim do MVP, deve ser possível responder com dados a:
 
-No diretório `outputs/`:
-
-- `demand_route_hour.csv`
-- `allocation_route_hour.csv`
-- `kpis.json`
-- `network_map.html`
-
-## Próximos upgrades recomendados
-
-- Inserir tempos reais GPS por período
-- Calibrar procura por OD e não apenas por linha/hora
-- Adicionar restrições de motorista/turno/depot
-- Rodar cenários com Monte Carlo para robustez
+- onde o Metrobus já cobre bem a procura;
+- onde os SMTUC devem reforçar/adaptar serviço;
+- que alterações melhoram tempo de viagem e cobertura.
