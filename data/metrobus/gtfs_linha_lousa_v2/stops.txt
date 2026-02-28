@@ -1,0 +1,28 @@
+stop_id,stop_name,stop_lat,stop_lon
+SRP,Serpins,40.1988,-8.2406
+CSA,Casal de Santo António,40.1999,-8.228
+CES,Casal do Espírito Santo,40.201,-8.211
+LES,Lousã Estação,40.1078,-8.2448
+LPE,Lousã - Parque de Exposições,40.1088,-8.2428
+MEI,Meiral,40.1128,-8.2348
+PAD,Padrão,40.1188,-8.2288
+COR,Corvo,40.1348,-8.2208
+MRC,Miranda do Corvo,40.0948,-8.3318
+LOB,Lobazes,40.1098,-8.3408
+MOI,Moinhos,40.1148,-8.3508
+TRE,Trémoa,40.1308,-8.3608
+VAC,Vale do Açor,40.1448,-8.3648
+SOC,Sobral de Ceira,40.1508,-8.3708
+CEI,Ceira,40.1558,-8.3758
+QPT,Quinta da Ponte,40.1608,-8.3818
+POR,Portela,40.1658,-8.3878
+VDF,Vale das Flores,40.1708,-8.3958
+CBR,Casa Branca,40.1808,-8.4028
+FNM,Fernando Namora,40.1908,-8.4088
+SOL,Solum,40.1988,-8.4158
+SJO,São José,40.2048,-8.4198
+NMT,Norton de Matos,40.2088,-8.4248
+ARR,Arregaça,40.2128,-8.4288
+COL,Colégios,40.2168,-8.4328
+PAR,Parque,40.2188,-8.4378
+PTG,Portagem,40.2208,-8.4418

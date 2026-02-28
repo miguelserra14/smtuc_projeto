@@ -1,0 +1,2 @@
+feed_publisher_name,feed_publisher_url,feed_lang,feed_start_date,feed_end_date,feed_version
+Linha de Lousã / Carris Metropolitana,https://www.carrismetropolitana.pt,pt,20251220,20261231,20251220

@@ -1,0 +1,4 @@
+service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
+Domingos e Feriados,0,0,0,0,0,0,1,20260104,20261231
+Sabados,0,0,0,0,0,1,0,20260104,20261231
+Dias Uteis,1,1,1,1,1,0,0,20260104,20261231
