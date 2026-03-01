@@ -9,12 +9,14 @@ import pytest
 from smtuc_mvp.gtfs import load_gtfs
 from smtuc_mvp.gtfs_probe import (
     casa,
+    trabalho,
+)
+from smtuc_mvp.gtfs_probe_ops import (
     compare_nearest_network,
     find_direct_options,
     nearest_stop_for_dataset,
     suggest_current_commute_options,
     suggest_random_commute_options,
-    trabalho,
 )
 
 WALK_SPEED_M_MIN = 80.0
