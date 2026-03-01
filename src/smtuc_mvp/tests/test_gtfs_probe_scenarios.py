@@ -189,6 +189,39 @@ def _route_direction_summaries(gtfs_smtuc, route_id: str, metro_stops: pd.DataFr
     return summaries
 
 
+def _line_avg_frequency_min(gtfs_smtuc, route_ids: list[str]) -> float | None:
+    if not route_ids:
+        return None
+
+    trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str).isin([str(r) for r in route_ids])]
+    if trips.empty:
+        return None
+
+    stop_times = gtfs_smtuc.stop_times[
+        gtfs_smtuc.stop_times["trip_id"].astype(str).isin(trips["trip_id"].astype(str))
+    ]
+    if stop_times.empty or "departure_seconds" not in stop_times.columns:
+        return None
+
+    first_dep = (
+        stop_times.groupby("trip_id", as_index=False)
+        .agg(first_dep_s=("departure_seconds", "min"))
+        .dropna(subset=["first_dep_s"])
+    )
+    if len(first_dep) < 2:
+        return None
+
+    departures = sorted(first_dep["first_dep_s"].astype(float).unique().tolist())
+    if len(departures) < 2:
+        return None
+
+    headways_s = [b - a for a, b in zip(departures[:-1], departures[1:]) if b > a]
+    if not headways_s:
+        return None
+
+    return round((sum(headways_s) / len(headways_s)) / 60.0, 1)
+
+
 def _line_overlap_top5() -> pd.DataFrame:
     gtfs_smtuc = load_gtfs(dataset="smtuc")
     gtfs_metro = load_gtfs(dataset="metrobus")
@@ -235,6 +268,7 @@ def _line_overlap_top5() -> pd.DataFrame:
         overlap_stops = sum(s["overlap_stops"] for s in line_summaries)
         total_stops = sum(s["total_stops"] for s in line_summaries)
         directions_considered = len(line_summaries)
+        avg_freq_min = _line_avg_frequency_min(gtfs_smtuc, route_ids)
 
         if total_ext_m <= 0:
             continue
@@ -244,7 +278,7 @@ def _line_overlap_top5() -> pd.DataFrame:
         out_rows.append(
             {
                 "line": str(line),
-                "route_ids_count": len(set(route_ids)),
+                "avg_freq_min": avg_freq_min,
                 "overlap_extension_m": round(overlap_ext_m, 1),
                 "line_extension_m": round(total_ext_m, 1),
                 "overlap_pct": round(overlap_pct, 2),
@@ -332,7 +366,7 @@ def test_scenario_top5_smtuc_overlap_with_metrobus_with_prints() -> None:
         display = top5.rename(
             columns={
                 "line": "Linha",
-                "route_ids_count": "Route IDs",
+                "avg_freq_min": "Freq média (min)",
                 "overlap_extension_m": "Overlap (m)",
                 "line_extension_m": "Extensão linha (m)",
                 "overlap_pct": "Overlap (%)",
@@ -341,7 +375,25 @@ def test_scenario_top5_smtuc_overlap_with_metrobus_with_prints() -> None:
                 "directions_considered": "Sentidos usados",
             }
         )
-        print(display.to_string(index=False))
+        if "Freq média (min)" in display.columns:
+            display["Freq média (min)"] = display["Freq média (min)"].map(
+                lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
+            )
+        ordered_cols = [
+            c
+            for c in [
+                "Linha",
+                "Overlap (m)",
+                "Extensão linha (m)",
+                "Overlap (%)",
+                "Paragens overlap",
+                "Paragens total",
+                "Sentidos usados",
+                "Freq média (min)",
+            ]
+            if c in display.columns
+        ]
+        print(display[ordered_cols].to_string(index=False))
 
     assert isinstance(top5, pd.DataFrame)
     assert len(top5) <= 5
