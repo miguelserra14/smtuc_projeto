@@ -15,6 +15,7 @@ OPTIONAL_GTFS = ("shapes", "calendar", "calendar_dates")
 
 REQUIRED_FILES = {f"{name}.txt" for name in REQUIRED_GTFS}
 OPTIONAL_FILES = {f"{name}.txt" for name in OPTIONAL_GTFS}
+_MISSING_OPTIONAL_WARNED: set[tuple[str, str]] = set()
 
 
 @dataclass
@@ -94,7 +95,10 @@ def load_gtfs(source_dir: Optional[str] = None, dataset: str = "nd") -> GTFSData
     missing = [name for name in OPTIONAL_GTFS if frames[name].empty]
     if missing:
         missing_list = ", ".join(f"{name}.txt" for name in missing)
-        print(f"Arquivos GTFS opcionais em falta: {missing_list}")
+        warning_key = (str(source), missing_list)
+        if warning_key not in _MISSING_OPTIONAL_WARNED:
+            print(f"Arquivos GTFS opcionais em falta: {missing_list}")
+            _MISSING_OPTIONAL_WARNED.add(warning_key)
 
     st = frames["stop_times"]
     for col in ("arrival_time", "departure_time"):

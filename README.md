@@ -8,6 +8,7 @@ visa responder a questao: agora que o metrobus faz parte da mobilidade em coimbr
 - atualizar dados smtuc: pq e que da erro no dados.gov?
 
 - probe:
+- separar o que e processamento de dados de funcoes mais complexas
 - limpar slop: evitar duplicados e fazer com que seja mais facil testar eustoes como:
 - como ir de ponto a a b no horario x?
 - quais as paragens mais proximas de um ponto a e b?

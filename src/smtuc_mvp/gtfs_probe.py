@@ -5,13 +5,14 @@ import math
 import random
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
-from typing import Iterable
+from typing import Callable, Iterable
 
 import pandas as pd
 
 from smtuc_mvp.gtfs import load_gtfs
 casa=[40.207883,-8.398107]
 trabalho= [40.186724, -8.416078] #DEI
+WALK_SPEED_M_MIN = 80.0  # ~4.8 km/h
 
 def _to_seconds(hhmmss: str) -> int:
     h, m, s = map(int, hhmmss.split(":"))
@@ -208,9 +209,9 @@ def nearest_stop_for_dataset(dataset: str, lat: float, lon: float) -> NearestSto
 
 
 def nearest_stop_to_work(work_lat: float = trabalho[0], work_lon: float = trabalho[1]) -> NearestStopResult:
-    #smtuc = nearest_stop_for_dataset("smtuc", work_lat, work_lon)
+    smtuc = nearest_stop_for_dataset("smtuc", work_lat, work_lon)
     metrobus = nearest_stop_for_dataset("metrobus", work_lat, work_lon)
-    return metrobus
+    return smtuc if smtuc.distance_m <= metrobus.distance_m else metrobus
 
 
 def compare_nearest_network(lat: float, lon: float) -> tuple[NearestStopResult, NearestStopResult, str]:
@@ -220,176 +221,14 @@ def compare_nearest_network(lat: float, lon: float) -> tuple[NearestStopResult, 
     return smtuc, metrobus, winner
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Testes rápidos GTFS (A->B e proximidade SMTUC vs Metrobus)")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    p_route = sub.add_parser("route", help="Ver opções diretas de A para B num dia/hora")
-    p_route.add_argument("--dataset", choices=["smtuc", "metrobus"], required=True)
-    p_route.add_argument("--origin", required=True, help="stop_id ou parte do nome da origem")
-    p_route.add_argument("--dest", required=True, help="stop_id ou parte do nome do destino")
-    p_route.add_argument("--day", required=True, help="YYYY-MM-DD")
-    p_route.add_argument("--time", required=True, help="HH:MM:SS")
-    p_route.add_argument("--limit", type=int, default=10)
-
-    p_near = sub.add_parser("nearest", help="Comparar se o ponto está mais perto de SMTUC ou Metrobus")
-    p_near.add_argument("--lat", type=float, required=True)
-    p_near.add_argument("--lon", type=float, required=True)
-
-    p_commute = sub.add_parser("commute-random", help="Sugestão aleatória casa->trabalho")
-    p_commute.add_argument("--home-lat", type=float, default=casa[0])
-    p_commute.add_argument("--home-lon", type=float, default=casa[1])
-    p_commute.add_argument("--work-lat", type=float, default=trabalho[0])
-    p_commute.add_argument("--work-lon", type=float, default=trabalho[1])
-    p_commute.add_argument("--limit", type=int, default=5)
-    p_commute.add_argument("--tries", type=int, default=20)
-
-    p_now = sub.add_parser("commute-now", help="Top opções casa->trabalho na data/hora atual")
-    p_now.add_argument("--home-lat", type=float, default=casa[0])
-    p_now.add_argument("--home-lon", type=float, default=casa[1])
-    p_now.add_argument("--work-lat", type=float, default=trabalho[0])
-    p_now.add_argument("--work-lon", type=float, default=trabalho[1])
-    p_now.add_argument("--limit", type=int, default=3)
-
-    args = parser.parse_args()
-
-    if args.cmd == "route":
-        df = find_direct_options(
-            dataset=args.dataset,
-            origin_ref=args.origin,
-            dest_ref=args.dest,
-            day_str=args.day,
-            time_str=args.time,
-        )
-        print("Sem opções diretas." if df.empty else df.head(args.limit).to_string(index=False))
-        return
-
-    if args.cmd == "nearest":
-        smtuc, metrobus, winner = compare_nearest_network(args.lat, args.lon)
-        print(f"SMTUC   -> {smtuc.stop_name} ({smtuc.stop_id}) | {smtuc.distance_m:.1f} m")
-        print(f"Metrobus-> {metrobus.stop_name} ({metrobus.stop_id}) | {metrobus.distance_m:.1f} m")
-        print(f"Mais próximo: {winner}")
-        return
-
-    if args.cmd == "commute-random":
-        suggest_random_commute_options(
-            home_lat=args.home_lat,
-            home_lon=args.home_lon,
-            work_lat=args.work_lat,
-            work_lon=args.work_lon,
-            limit=args.limit,
-            tries=args.tries,
-        )
-        return
-
-    if args.cmd == "commute-now":
-        suggest_current_commute_options(
-            home_lat=args.home_lat,
-            home_lon=args.home_lon,
-            work_lat=args.work_lat,
-            work_lon=args.work_lon,
-            limit=args.limit,
-        )
-        return
-
-
-
-def suggest_random_commute_options(
+def _collect_commute_options(
     home_lat: float,
     home_lon: float,
     work_lat: float,
     work_lon: float,
-    limit: int = 5,
-    tries: int = 20,
-) -> pd.DataFrame:
-    walk_speed_m_min = 80.0  # ~4.8 km/h
-    rows: list[pd.DataFrame] = []
-
-    for _ in range(tries):
-        d = date.today() + timedelta(days=random.randint(0, 20))
-        hh = random.randint(6, 22)
-        mm = random.randint(0, 59)
-        ss = random.choice([0, 30])
-
-        day_str = d.strftime("%Y-%m-%d")
-        time_str = f"{hh:02d}:{mm:02d}:{ss:02d}"
-
-        for dataset in ("smtuc", "metrobus"):
-            try:
-                near_home = nearest_stop_for_dataset(dataset, home_lat, home_lon)
-                near_work = nearest_stop_for_dataset(dataset, work_lat, work_lon)
-
-                df = find_direct_options(
-                    dataset=dataset,
-                    origin_ref=near_home.stop_id,
-                    dest_ref=near_work.stop_id,
-                    day_str=day_str,
-                    time_str=time_str,
-                )
-                if df.empty:
-                    continue
-
-                df = df.copy()
-                df["dataset"] = dataset
-                df["day"] = day_str
-                df["time"] = time_str
-                df["walk_home_m"] = round(near_home.distance_m, 1)
-                df["walk_work_m"] = round(near_work.distance_m, 1)
-                df["walk_home_min"] = (df["walk_home_m"] / walk_speed_m_min).round(1)
-                df["walk_work_min"] = (df["walk_work_m"] / walk_speed_m_min).round(1)
-                df["total_min_est"] = (df["duration_min"] + df["walk_home_min"] + df["walk_work_min"]).round(1)
-                rows.append(df)
-            except Exception:
-                continue
-
-        if rows:
-            break
-
-    if not rows:
-        print("Não foi possível encontrar opções diretas nas tentativas aleatórias.")
-        return pd.DataFrame()
-
-    out = (
-        pd.concat(rows, ignore_index=True)
-        .sort_values(["total_min_est", "duration_min", "dataset"])
-        .drop_duplicates(subset=["dataset", "route_short_name", "origin_dep_time", "dest_arr_time"], keep="first")
-        .reset_index(drop=True)
-    )
-
-    disp = out.head(limit).rename(columns={
-        "dataset": "Rede",
-        "day": "Dia",
-        "time": "Hora",
-        "route_short_name": "Linha",
-        "origin_name": "Origem",
-        "dest_name": "Destino",
-        "origin_dep_time": "Partida",
-        "dest_arr_time": "Chegada",
-        "duration_min": "Viagem",
-        "walk_home_m": "A pé casa",
-        "walk_work_m": "A pé trabalho",
-        "total_min_est": "Total estimado",
-    })
-
-    print("\n=== Melhores hipóteses casa -> trabalho ===")
-    print(disp[[c for c in [
-        "Rede", "Dia", "Hora", "Linha", "Origem", "Destino",
-        "Partida", "Chegada", "Viagem", "A pé casa", "A pé trabalho", "Total estimado"
-    ] if c in disp.columns]].to_string(index=False))
-
-    return out.head(limit)
-def suggest_current_commute_options(
-    home_lat: float,
-    home_lon: float,
-    work_lat: float,
-    work_lon: float,
-    limit: int = 3,
-) -> pd.DataFrame:
-    now = datetime.now()
-    day_str = now.strftime("%Y-%m-%d")
-    time_str = now.strftime("%H:%M:%S")
-    walk_speed_m_min = 80.0
-
+    day_str: str,
+    time_str: str,
+) -> list[pd.DataFrame]:
     rows: list[pd.DataFrame] = []
 
     for dataset in ("smtuc", "metrobus"):
@@ -413,25 +252,29 @@ def suggest_current_commute_options(
             df["time"] = time_str
             df["walk_home_m"] = round(near_home.distance_m, 1)
             df["walk_work_m"] = round(near_work.distance_m, 1)
-            df["walk_home_min"] = (df["walk_home_m"] / walk_speed_m_min).round(1)
-            df["walk_work_min"] = (df["walk_work_m"] / walk_speed_m_min).round(1)
+            df["walk_home_min"] = (df["walk_home_m"] / WALK_SPEED_M_MIN).round(1)
+            df["walk_work_min"] = (df["walk_work_m"] / WALK_SPEED_M_MIN).round(1)
             df["total_min_est"] = (df["duration_min"] + df["walk_home_min"] + df["walk_work_min"]).round(1)
-
             rows.append(df)
         except Exception:
             continue
 
+    return rows
+
+
+def _rank_commute_options(rows: list[pd.DataFrame]) -> pd.DataFrame:
     if not rows:
-        print("Sem opções diretas para a data/hora atual.")
         return pd.DataFrame()
 
-    out = pd.concat(rows, ignore_index=True).sort_values(
-        ["total_min_est", "duration_min", "dataset"]
-    ).drop_duplicates(
-        subset=["dataset", "route_short_name", "origin_dep_time", "dest_arr_time"],
-        keep="first",
-    ).reset_index(drop=True)
+    return (
+        pd.concat(rows, ignore_index=True)
+        .sort_values(["total_min_est", "duration_min", "dataset"])
+        .drop_duplicates(subset=["dataset", "route_short_name", "origin_dep_time", "dest_arr_time"], keep="first")
+        .reset_index(drop=True)
+    )
 
+
+def _pretty_print_commute(out: pd.DataFrame, limit: int, title: str, format_units: bool) -> None:
     disp = out.head(limit).copy().rename(columns={
         "dataset": "Rede",
         "day": "Dia",
@@ -447,22 +290,182 @@ def suggest_current_commute_options(
         "total_min_est": "Total estimado",
     })
 
-    if "Viagem" in disp.columns:
-        disp["Viagem"] = disp["Viagem"].map(lambda x: f"{float(x):.1f} min")
-    if "Total estimado" in disp.columns:
-        disp["Total estimado"] = disp["Total estimado"].map(lambda x: f"{float(x):.1f} min")
-    if "A pé casa" in disp.columns:
-        disp["A pé casa"] = disp["A pé casa"].map(lambda x: f"{float(x):.0f} m")
-    if "A pé trabalho" in disp.columns:
-        disp["A pé trabalho"] = disp["A pé trabalho"].map(lambda x: f"{float(x):.0f} m")
+    if format_units:
+        if "Viagem" in disp.columns:
+            disp["Viagem"] = disp["Viagem"].map(lambda x: f"{float(x):.1f} min")
+        if "Total estimado" in disp.columns:
+            disp["Total estimado"] = disp["Total estimado"].map(lambda x: f"{float(x):.1f} min")
+        if "A pé casa" in disp.columns:
+            disp["A pé casa"] = disp["A pé casa"].map(lambda x: f"{float(x):.0f} m")
+        if "A pé trabalho" in disp.columns:
+            disp["A pé trabalho"] = disp["A pé trabalho"].map(lambda x: f"{float(x):.0f} m")
 
-    print(f"\n=== Top {limit} opções (agora) ===")
-    print(disp[[
+    cols = [
         c for c in [
             "Rede", "Dia", "Hora", "Linha", "Origem", "Destino",
             "Partida", "Chegada", "Viagem", "A pé casa", "A pé trabalho", "Total estimado"
         ] if c in disp.columns
-    ]].to_string(index=False))
+    ]
+
+    print(f"\n=== {title} ===")
+    print(disp[cols].to_string(index=False))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    today = date.today().strftime("%Y-%m-%d")
+    now_time = datetime.now().strftime("%H:%M:%S")
+
+    parser = argparse.ArgumentParser(description="Testes rápidos GTFS (A->B e proximidade SMTUC vs Metrobus)")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_route = sub.add_parser("route", help="Ver opções diretas de A para B")
+    p_route.add_argument("--dataset", choices=["smtuc", "metrobus"], default="smtuc")
+    p_route.add_argument("--origin", required=True, help="stop_id ou parte do nome da origem")
+    p_route.add_argument("--dest", required=True, help="stop_id ou parte do nome do destino")
+    p_route.add_argument("--day", default=today, help="YYYY-MM-DD (default: hoje)")
+    p_route.add_argument("--time", default=now_time, help="HH:MM:SS (default: agora)")
+    p_route.add_argument("--limit", type=int, default=10)
+    p_route.set_defaults(handler=_handle_route)
+
+    p_near = sub.add_parser("nearest", help="Comparar se o ponto está mais perto de SMTUC ou Metrobus")
+    p_near.add_argument("--lat", type=float, default=casa[0])
+    p_near.add_argument("--lon", type=float, default=casa[1])
+    p_near.set_defaults(handler=_handle_nearest)
+
+    p_commute = sub.add_parser("commute-random", aliases=["random"], help="Sugestão aleatória casa->trabalho")
+    p_commute.add_argument("--home-lat", type=float, default=casa[0])
+    p_commute.add_argument("--home-lon", type=float, default=casa[1])
+    p_commute.add_argument("--work-lat", type=float, default=trabalho[0])
+    p_commute.add_argument("--work-lon", type=float, default=trabalho[1])
+    p_commute.add_argument("--limit", type=int, default=5)
+    p_commute.add_argument("--tries", type=int, default=20)
+    p_commute.set_defaults(handler=_handle_commute_random)
+
+    p_now = sub.add_parser("commute-now", aliases=["now"], help="Top opções casa->trabalho na data/hora atual")
+    p_now.add_argument("--home-lat", type=float, default=casa[0])
+    p_now.add_argument("--home-lon", type=float, default=casa[1])
+    p_now.add_argument("--work-lat", type=float, default=trabalho[0])
+    p_now.add_argument("--work-lon", type=float, default=trabalho[1])
+    p_now.add_argument("--limit", type=int, default=3)
+    p_now.set_defaults(handler=_handle_commute_now)
+
+    return parser
+
+
+def _run_with_handler(args: argparse.Namespace) -> None:
+    handler: Callable[[argparse.Namespace], None] = args.handler
+    handler(args)
+
+
+def _handle_route(args: argparse.Namespace) -> None:
+    df = find_direct_options(
+        dataset=args.dataset,
+        origin_ref=args.origin,
+        dest_ref=args.dest,
+        day_str=args.day,
+        time_str=args.time,
+    )
+    print("Sem opções diretas." if df.empty else df.head(args.limit).to_string(index=False))
+
+
+def _handle_nearest(args: argparse.Namespace) -> None:
+    smtuc, metrobus, winner = compare_nearest_network(args.lat, args.lon)
+    print(f"SMTUC   -> {smtuc.stop_name} ({smtuc.stop_id}) | {smtuc.distance_m:.1f} m")
+    print(f"Metrobus-> {metrobus.stop_name} ({metrobus.stop_id}) | {metrobus.distance_m:.1f} m")
+    print(f"Mais próximo: {winner}")
+
+
+def _handle_commute_random(args: argparse.Namespace) -> None:
+    suggest_random_commute_options(
+        home_lat=args.home_lat,
+        home_lon=args.home_lon,
+        work_lat=args.work_lat,
+        work_lon=args.work_lon,
+        limit=args.limit,
+        tries=args.tries,
+    )
+
+
+def _handle_commute_now(args: argparse.Namespace) -> None:
+    suggest_current_commute_options(
+        home_lat=args.home_lat,
+        home_lon=args.home_lon,
+        work_lat=args.work_lat,
+        work_lon=args.work_lon,
+        limit=args.limit,
+    )
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+    _run_with_handler(args)
+
+
+
+def suggest_random_commute_options(
+    home_lat: float,
+    home_lon: float,
+    work_lat: float,
+    work_lon: float,
+    limit: int = 5,
+    tries: int = 20,
+) -> pd.DataFrame:
+    for _ in range(tries):
+        d = date.today() + timedelta(days=random.randint(0, 20))
+        hh = random.randint(6, 22)
+        mm = random.randint(0, 59)
+        ss = random.choice([0, 30])
+
+        day_str = d.strftime("%Y-%m-%d")
+        time_str = f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+        rows = _collect_commute_options(
+            home_lat=home_lat,
+            home_lon=home_lon,
+            work_lat=work_lat,
+            work_lon=work_lon,
+            day_str=day_str,
+            time_str=time_str,
+        )
+
+        if rows:
+            break
+
+    if not rows:
+        print("Não foi possível encontrar opções diretas nas tentativas aleatórias.")
+        return pd.DataFrame()
+
+    out = _rank_commute_options(rows)
+    _pretty_print_commute(out=out, limit=limit, title="Melhores hipóteses casa -> trabalho", format_units=False)
+
+    return out.head(limit)
+def suggest_current_commute_options(
+    home_lat: float,
+    home_lon: float,
+    work_lat: float,
+    work_lon: float,
+    limit: int = 3,
+) -> pd.DataFrame:
+    now = datetime.now()
+    day_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M:%S")
+
+    rows = _collect_commute_options(
+        home_lat=home_lat,
+        home_lon=home_lon,
+        work_lat=work_lat,
+        work_lon=work_lon,
+        day_str=day_str,
+        time_str=time_str,
+    )
+
+    if not rows:
+        print("Sem opções diretas para a data/hora atual.")
+        return pd.DataFrame()
+
+    out = _rank_commute_options(rows)
+    _pretty_print_commute(out=out, limit=limit, title=f"Top {limit} opções (agora)", format_units=True)
 
     return out.head(limit)
 
