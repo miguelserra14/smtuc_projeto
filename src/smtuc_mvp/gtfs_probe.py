@@ -1,18 +1,31 @@
 from __future__ import annotations
 
-import argparse
 import math
 import random
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
-from typing import Callable, Iterable
+from typing import Iterable
 
 import pandas as pd
 
 from smtuc_mvp.gtfs import load_gtfs
-casa=[40.207883,-8.398107]
-trabalho= [40.186724, -8.416078] #DEI
+
+casa = [40.207883, -8.398107]
+trabalho = [40.186724, -8.416078]  # DEI
 WALK_SPEED_M_MIN = 80.0  # ~4.8 km/h
+
+
+@dataclass
+class NearestStopResult:
+    dataset: str
+    stop_id: str
+    stop_name: str
+    distance_m: float
+
+
+# -----------------------------------------------------------------------------
+# 1) Helpers básicos de parsing/normalização (baixo nível)
+# -----------------------------------------------------------------------------
 
 def _to_seconds(hhmmss: str) -> int:
     h, m, s = map(int, hhmmss.split(":"))
@@ -26,6 +39,29 @@ def _parse_day(day_str: str) -> date:
 def _weekday_col(d: date) -> str:
     return d.strftime("%A").lower()  # monday, tuesday, ...
 
+
+def _haversine_m(lat1: float, lon1: float, lat2: Iterable[float], lon2: Iterable[float]) -> pd.Series:
+    r = 6371000.0
+    lat1r = math.radians(lat1)
+    lon1r = math.radians(lon1)
+
+    lat2s = pd.Series(lat2, dtype="float64").apply(math.radians)
+    lon2s = pd.Series(lon2, dtype="float64").apply(math.radians)
+
+    dlat = lat2s - lat1r
+    dlon = lon2s - lon1r
+
+    a = (dlat / 2).apply(math.sin) ** 2 + pd.Series(
+        [math.cos(lat1r) * math.cos(v) for v in lat2s], dtype="float64"
+    ) * (dlon / 2).apply(math.sin) ** 2
+
+    c = 2 * a.apply(lambda x: math.atan2(math.sqrt(x), math.sqrt(1 - x)))
+    return r * c
+
+
+# -----------------------------------------------------------------------------
+# 2) Helpers GTFS intermédios (filtragem e resolução de entidades)
+# -----------------------------------------------------------------------------
 
 def _active_service_ids(gtfs, d: date) -> set[str]:
     # fallback: sem calendar -> usa todos os services dos trips
@@ -82,6 +118,11 @@ def _resolve_stop_id(gtfs, ref: str) -> str:
         raise ValueError(f"Paragem ambígua '{ref}'. Exemplos: {sample}")
 
     raise ValueError(f"Paragem não encontrada: '{ref}'")
+
+
+# -----------------------------------------------------------------------------
+# 3) Operações GTFS complexas (nível de negócio)
+# -----------------------------------------------------------------------------
 
 
 def find_direct_options(dataset: str, origin_ref: str, dest_ref: str, day_str: str, time_str: str) -> pd.DataFrame:
@@ -166,33 +207,6 @@ def find_direct_options(dataset: str, origin_ref: str, dest_ref: str, day_str: s
     return m[cols].sort_values(["origin_dep_time", "route_id"]).reset_index(drop=True)
 
 
-def _haversine_m(lat1: float, lon1: float, lat2: Iterable[float], lon2: Iterable[float]) -> pd.Series:
-    r = 6371000.0
-    lat1r = math.radians(lat1)
-    lon1r = math.radians(lon1)
-
-    lat2s = pd.Series(lat2, dtype="float64").apply(math.radians)
-    lon2s = pd.Series(lon2, dtype="float64").apply(math.radians)
-
-    dlat = lat2s - lat1r
-    dlon = lon2s - lon1r
-
-    a = (dlat / 2).apply(math.sin) ** 2 + pd.Series(
-        [math.cos(lat1r) * math.cos(v) for v in lat2s], dtype="float64"
-    ) * (dlon / 2).apply(math.sin) ** 2
-
-    c = 2 * a.apply(lambda x: math.atan2(math.sqrt(x), math.sqrt(1 - x)))
-    return r * c
-
-
-@dataclass
-class NearestStopResult:
-    dataset: str
-    stop_id: str
-    stop_name: str
-    distance_m: float
-
-
 def nearest_stop_for_dataset(dataset: str, lat: float, lon: float) -> NearestStopResult:
     gtfs = load_gtfs(dataset=dataset)
     stops = gtfs.stops.copy()
@@ -206,12 +220,6 @@ def nearest_stop_for_dataset(dataset: str, lat: float, lon: float) -> NearestSto
     stop_id = str(stops.loc[idx, "stop_id"])
     stop_name = str(stops.loc[idx, "stop_name"]) if "stop_name" in stops.columns else stop_id
     return NearestStopResult(dataset=dataset, stop_id=stop_id, stop_name=stop_name, distance_m=float(dists.loc[idx]))
-
-
-def nearest_stop_to_work(work_lat: float = trabalho[0], work_lon: float = trabalho[1]) -> NearestStopResult:
-    smtuc = nearest_stop_for_dataset("smtuc", work_lat, work_lon)
-    metrobus = nearest_stop_for_dataset("metrobus", work_lat, work_lon)
-    return smtuc if smtuc.distance_m <= metrobus.distance_m else metrobus
 
 
 def compare_nearest_network(lat: float, lon: float) -> tuple[NearestStopResult, NearestStopResult, str]:
@@ -311,98 +319,6 @@ def _pretty_print_commute(out: pd.DataFrame, limit: int, title: str, format_unit
     print(disp[cols].to_string(index=False))
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    today = date.today().strftime("%Y-%m-%d")
-    now_time = datetime.now().strftime("%H:%M:%S")
-
-    parser = argparse.ArgumentParser(description="Testes rápidos GTFS (A->B e proximidade SMTUC vs Metrobus)")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    p_route = sub.add_parser("route", help="Ver opções diretas de A para B")
-    p_route.add_argument("--dataset", choices=["smtuc", "metrobus"], default="smtuc")
-    p_route.add_argument("--origin", required=True, help="stop_id ou parte do nome da origem")
-    p_route.add_argument("--dest", required=True, help="stop_id ou parte do nome do destino")
-    p_route.add_argument("--day", default=today, help="YYYY-MM-DD (default: hoje)")
-    p_route.add_argument("--time", default=now_time, help="HH:MM:SS (default: agora)")
-    p_route.add_argument("--limit", type=int, default=10)
-    p_route.set_defaults(handler=_handle_route)
-
-    p_near = sub.add_parser("nearest", help="Comparar se o ponto está mais perto de SMTUC ou Metrobus")
-    p_near.add_argument("--lat", type=float, default=casa[0])
-    p_near.add_argument("--lon", type=float, default=casa[1])
-    p_near.set_defaults(handler=_handle_nearest)
-
-    p_commute = sub.add_parser("commute-random", aliases=["random"], help="Sugestão aleatória casa->trabalho")
-    p_commute.add_argument("--home-lat", type=float, default=casa[0])
-    p_commute.add_argument("--home-lon", type=float, default=casa[1])
-    p_commute.add_argument("--work-lat", type=float, default=trabalho[0])
-    p_commute.add_argument("--work-lon", type=float, default=trabalho[1])
-    p_commute.add_argument("--limit", type=int, default=5)
-    p_commute.add_argument("--tries", type=int, default=20)
-    p_commute.set_defaults(handler=_handle_commute_random)
-
-    p_now = sub.add_parser("commute-now", aliases=["now"], help="Top opções casa->trabalho na data/hora atual")
-    p_now.add_argument("--home-lat", type=float, default=casa[0])
-    p_now.add_argument("--home-lon", type=float, default=casa[1])
-    p_now.add_argument("--work-lat", type=float, default=trabalho[0])
-    p_now.add_argument("--work-lon", type=float, default=trabalho[1])
-    p_now.add_argument("--limit", type=int, default=3)
-    p_now.set_defaults(handler=_handle_commute_now)
-
-    return parser
-
-
-def _run_with_handler(args: argparse.Namespace) -> None:
-    handler: Callable[[argparse.Namespace], None] = args.handler
-    handler(args)
-
-
-def _handle_route(args: argparse.Namespace) -> None:
-    df = find_direct_options(
-        dataset=args.dataset,
-        origin_ref=args.origin,
-        dest_ref=args.dest,
-        day_str=args.day,
-        time_str=args.time,
-    )
-    print("Sem opções diretas." if df.empty else df.head(args.limit).to_string(index=False))
-
-
-def _handle_nearest(args: argparse.Namespace) -> None:
-    smtuc, metrobus, winner = compare_nearest_network(args.lat, args.lon)
-    print(f"SMTUC   -> {smtuc.stop_name} ({smtuc.stop_id}) | {smtuc.distance_m:.1f} m")
-    print(f"Metrobus-> {metrobus.stop_name} ({metrobus.stop_id}) | {metrobus.distance_m:.1f} m")
-    print(f"Mais próximo: {winner}")
-
-
-def _handle_commute_random(args: argparse.Namespace) -> None:
-    suggest_random_commute_options(
-        home_lat=args.home_lat,
-        home_lon=args.home_lon,
-        work_lat=args.work_lat,
-        work_lon=args.work_lon,
-        limit=args.limit,
-        tries=args.tries,
-    )
-
-
-def _handle_commute_now(args: argparse.Namespace) -> None:
-    suggest_current_commute_options(
-        home_lat=args.home_lat,
-        home_lon=args.home_lon,
-        work_lat=args.work_lat,
-        work_lon=args.work_lon,
-        limit=args.limit,
-    )
-
-
-def main() -> None:
-    parser = _build_parser()
-    args = parser.parse_args()
-    _run_with_handler(args)
-
-
-
 def suggest_random_commute_options(
     home_lat: float,
     home_lon: float,
@@ -440,6 +356,8 @@ def suggest_random_commute_options(
     _pretty_print_commute(out=out, limit=limit, title="Melhores hipóteses casa -> trabalho", format_units=False)
 
     return out.head(limit)
+
+
 def suggest_current_commute_options(
     home_lat: float,
     home_lon: float,
@@ -468,6 +386,3 @@ def suggest_current_commute_options(
     _pretty_print_commute(out=out, limit=limit, title=f"Top {limit} opções (agora)", format_units=True)
 
     return out.head(limit)
-
-if __name__ == "__main__":
-    main()

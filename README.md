@@ -18,6 +18,11 @@ visa responder a questao: agora que o metrobus faz parte da mobilidade em coimbr
 - visualização
 - meter tudo num mapa : linhas, paragens, so smtuc, so metrobus
 - conseguir visualizar cada linha e comparar overlap com o metrobus, dar estatisticas em percentagem
+- limpar slop: evitar duplicados e fazer com que seja mais facil testar eustoes como:
+- como ir de ponto a a b no horario x?
+- quais as paragens mais proximas de um ponto a e b?
+- qual o alcance de uma paragem em 15min em varios horarios
+- vista por linha: frequencia, overlap com o metrobus
 
 
 # MVP — Alocação eficiente de autocarros e metrobus (Coimbra)

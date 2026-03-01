@@ -366,34 +366,35 @@ def test_scenario_top5_smtuc_overlap_with_metrobus_with_prints() -> None:
         display = top5.rename(
             columns={
                 "line": "Linha",
-                "avg_freq_min": "Freq média (min)",
-                "overlap_extension_m": "Overlap (m)",
-                "line_extension_m": "Extensão linha (m)",
-                "overlap_pct": "Overlap (%)",
-                "overlap_stops": "Paragens overlap",
-                "total_stops": "Paragens total",
-                "directions_considered": "Sentidos usados",
+                "avg_freq_min": "Freq(min)",
+                "overlap_extension_m": "Overlap(m)",
+                "line_extension_m": "Extensão(m)",
+                "overlap_pct": "Overlap(%)",
+                "overlap_stops": "Paragens c/ Overlap",
+                "total_stops": "Paragens Totais",
+                "directions_considered": "Sentidos.",
             }
         )
-        if "Freq média (min)" in display.columns:
-            display["Freq média (min)"] = display["Freq média (min)"].map(
+        if "Freq(min)" in display.columns:
+            display["Freq(min)"] = display["Freq(min)"].map(
                 lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
             )
         ordered_cols = [
             c
             for c in [
                 "Linha",
-                "Overlap (m)",
-                "Extensão linha (m)",
-                "Overlap (%)",
-                "Paragens overlap",
-                "Paragens total",
-                "Sentidos usados",
-                "Freq média (min)",
+                "Overlap(m)",
+                "Extensão(m)",
+                "Overlap(%)",
+                "Paragens c/ Overlap",
+                "Paragens Totais",
+                "Sentidos.",
+                "Freq(min)",
             ]
             if c in display.columns
         ]
-        print(display[ordered_cols].to_string(index=False))
+        with pd.option_context("display.width", 220):
+            print(display[ordered_cols].to_string(index=False, line_width=220))
 
     assert isinstance(top5, pd.DataFrame)
     assert len(top5) <= 5
