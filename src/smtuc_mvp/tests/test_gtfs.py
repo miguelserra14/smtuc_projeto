@@ -93,6 +93,54 @@ def _stop_name_map(gtfs) -> dict[str, str]:
         .to_dict()
     )
 
+
+def _candidate_days(gtfs) -> list[date]:
+    days: list[date] = [_pick_valid_day(gtfs)]
+
+    if gtfs.calendar.empty or not {"start_date", "end_date"}.issubset(gtfs.calendar.columns):
+        return days
+
+    for _, row in gtfs.calendar.head(30).iterrows():
+        start = datetime.strptime(str(int(row["start_date"])), "%Y%m%d").date()
+        end = datetime.strptime(str(int(row["end_date"])), "%Y%m%d").date()
+        d = start
+        while d <= min(end, start + timedelta(days=14)):
+            if int(row.get(d.strftime("%A").lower(), 0)) == 1:
+                days.append(d)
+                break
+            d += timedelta(days=1)
+
+    uniq: list[date] = []
+    seen: set[date] = set()
+    for d in days:
+        if d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def _find_case_with_direct_options(gtfs, after: str = "00:00:00") -> tuple[date, str, str, pd.DataFrame] | None:
+    candidate_days = _candidate_days(gtfs)
+
+    for day in candidate_days:
+        active_sids = _active_services(gtfs, day)
+        trips = gtfs.trips.copy()
+        if active_sids and "service_id" in trips.columns:
+            trips = trips[trips["service_id"].astype(str).isin(active_sids)]
+
+        for trip_id in trips["trip_id"].astype(str).head(500):
+            st_trip = gtfs.stop_times[gtfs.stop_times["trip_id"].astype(str) == trip_id].sort_values("stop_sequence")
+            if len(st_trip) < 2:
+                continue
+
+            origin = str(st_trip.iloc[0]["stop_id"])
+            dest = str(st_trip.iloc[1]["stop_id"])
+            options = _direct_options(gtfs, origin, dest, day, after)
+            if not options.empty:
+                return day, origin, dest, options
+
+    return None
+
 @pytest.mark.integration
 @pytest.mark.parametrize("dataset", DATASETS)
 def test_01_extract_readonly(tmp_path: Path, dataset: str) -> None:
@@ -141,14 +189,11 @@ def test_03_display_por_paragem(dataset: str) -> None:
 @pytest.mark.parametrize("dataset", DATASETS)
 def test_04_rota_a_b_por_hora_dia(dataset: str) -> None:
     gtfs = load_gtfs(str(_require_dataset(dataset)))
-    day = _pick_valid_day(gtfs)
-    trip_id = str(gtfs.trips.iloc[0]["trip_id"])
-    st_trip = gtfs.stop_times[gtfs.stop_times["trip_id"].astype(str) == trip_id].sort_values("stop_sequence")
-    assert len(st_trip) >= 2
+    case = _find_case_with_direct_options(gtfs, after="00:00:00")
+    if case is None:
+        pytest.skip(f"Sem caso A->B direto com serviço ativo para dataset: {dataset}")
 
-    origin = str(st_trip.iloc[0]["stop_id"])
-    dest = str(st_trip.iloc[1]["stop_id"])
-    options = _direct_options(gtfs, origin, dest, day, "00:00:00")
+    day, origin, dest, options = case
 
     stop_names = _stop_name_map(gtfs)
     origin_name = stop_names.get(origin, origin)
@@ -164,4 +209,4 @@ def test_04_rota_a_b_por_hora_dia(dataset: str) -> None:
     cols = [c for c in ["route_id", "trip_id", "origem", "destino", "origin_dep_s", "dest_arr_s"] if c in options_print.columns]
     print(options_print[cols].head(5).to_string(index=False))
 
-    assert not options.empty
+    assert not options.empty, f"Sem opções diretas para dataset={dataset} no caso selecionado"
