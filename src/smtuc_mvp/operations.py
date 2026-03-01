@@ -7,7 +7,6 @@ import pandas as pd
 
 from smtuc_mvp.gtfs import load_gtfs
 from smtuc_mvp.gtfs_probe import (
-    WALK_SPEED_M_MIN,
     NearestStopResult,
     _active_service_ids,
     _haversine_m,
@@ -15,6 +14,8 @@ from smtuc_mvp.gtfs_probe import (
     _resolve_stop_id,
     _to_seconds,
 )
+
+WALK_SPEED_M_MIN = 80.0  # ~4.8 km/h
 
 
 def find_direct_options(dataset: str, origin_ref: str, dest_ref: str, day_str: str, time_str: str) -> pd.DataFrame:
@@ -278,3 +279,239 @@ def suggest_current_commute_options(
     _pretty_print_commute(out=out, limit=limit, title=f"Top {limit} opções (agora)", format_units=True)
 
     return out.head(limit)
+
+
+def next_monday(from_day: date) -> date:
+    delta = (0 - from_day.weekday()) % 7
+    return from_day + timedelta(days=delta)
+
+
+def commute_options_for_datetime(
+    home_lat: float,
+    home_lon: float,
+    work_lat: float,
+    work_lon: float,
+    day_str: str,
+    time_str: str,
+) -> pd.DataFrame:
+    rows = _collect_commute_options(
+        home_lat=home_lat,
+        home_lon=home_lon,
+        work_lat=work_lat,
+        work_lon=work_lon,
+        day_str=day_str,
+        time_str=time_str,
+    )
+    return _rank_commute_options(rows)
+
+
+def _representative_route_stops_for_subset(gtfs, route_trips: pd.DataFrame) -> pd.DataFrame:
+    if route_trips.empty:
+        return pd.DataFrame()
+
+    st = gtfs.stop_times[gtfs.stop_times["trip_id"].astype(str).isin(route_trips["trip_id"].astype(str))].copy()
+    if st.empty:
+        return pd.DataFrame()
+
+    trip_sizes = st.groupby("trip_id", as_index=False).agg(n_stops=("stop_id", "count"))
+    best_trip = str(trip_sizes.sort_values("n_stops", ascending=False).iloc[0]["trip_id"])
+
+    best = st[st["trip_id"].astype(str) == best_trip].sort_values("stop_sequence")
+    best = best.merge(
+        gtfs.stops[["stop_id", "stop_lat", "stop_lon"]],
+        on="stop_id",
+        how="left",
+    )
+    return best[["stop_id", "stop_sequence", "stop_lat", "stop_lon"]].drop_duplicates(subset=["stop_sequence"])
+
+
+def _route_direction_summaries(
+    gtfs_smtuc,
+    route_id: str,
+    metro_stops: pd.DataFrame,
+    walk_5_min_m: float,
+) -> list[dict]:
+    route_trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str) == str(route_id)].copy()
+    if route_trips.empty:
+        return []
+
+    if "direction_id" in route_trips.columns:
+        direction_values = route_trips["direction_id"].dropna().astype(str).unique().tolist()
+        if not direction_values:
+            direction_values = ["na"]
+    else:
+        direction_values = ["na"]
+
+    summaries: list[dict] = []
+
+    for direction in direction_values:
+        if direction == "na" and "direction_id" not in route_trips.columns:
+            subset = route_trips
+        elif direction == "na":
+            subset = route_trips
+        else:
+            subset = route_trips[route_trips["direction_id"].astype(str) == direction]
+
+        route_stops = _representative_route_stops_for_subset(gtfs_smtuc, subset)
+        route_stops = route_stops.dropna(subset=["stop_lat", "stop_lon"]).reset_index(drop=True)
+        if len(route_stops) < 2:
+            continue
+
+        min_dist = []
+        for _, row in route_stops.iterrows():
+            d = _haversine_m(float(row["stop_lat"]), float(row["stop_lon"]), metro_stops["stop_lat"], metro_stops["stop_lon"])
+            min_dist.append(float(d.min()))
+
+        route_stops["is_overlap_stop"] = pd.Series(min_dist) <= walk_5_min_m
+
+        total_ext_m = 0.0
+        overlap_ext_m = 0.0
+        for i in range(len(route_stops) - 1):
+            a = route_stops.iloc[i]
+            b = route_stops.iloc[i + 1]
+            seg = float(
+                _haversine_m(
+                    float(a["stop_lat"]),
+                    float(a["stop_lon"]),
+                    pd.Series([b["stop_lat"]]),
+                    pd.Series([b["stop_lon"]]),
+                ).iloc[0]
+            )
+            total_ext_m += seg
+            if bool(a["is_overlap_stop"]) and bool(b["is_overlap_stop"]):
+                overlap_ext_m += seg
+
+        if total_ext_m <= 0:
+            continue
+
+        summaries.append(
+            {
+                "direction": direction,
+                "total_ext_m": total_ext_m,
+                "overlap_ext_m": overlap_ext_m,
+                "overlap_stops": int(route_stops["is_overlap_stop"].sum()),
+                "total_stops": int(len(route_stops)),
+            }
+        )
+
+    return summaries
+
+
+def _line_avg_frequency_min(gtfs_smtuc, route_ids: list[str]) -> float | None:
+    if not route_ids:
+        return None
+
+    trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str).isin([str(r) for r in route_ids])]
+    if trips.empty:
+        return None
+
+    stop_times = gtfs_smtuc.stop_times[
+        gtfs_smtuc.stop_times["trip_id"].astype(str).isin(trips["trip_id"].astype(str))
+    ]
+    if stop_times.empty or "departure_seconds" not in stop_times.columns:
+        return None
+
+    first_dep = (
+        stop_times.groupby("trip_id", as_index=False)
+        .agg(first_dep_s=("departure_seconds", "min"))
+        .dropna(subset=["first_dep_s"])
+    )
+    if len(first_dep) < 2:
+        return None
+
+    departures = sorted(first_dep["first_dep_s"].astype(float).unique().tolist())
+    if len(departures) < 2:
+        return None
+
+    headways_s = [b - a for a, b in zip(departures[:-1], departures[1:]) if b > a]
+    if not headways_s:
+        return None
+
+    return round((sum(headways_s) / len(headways_s)) / 60.0, 1)
+
+
+def line_overlap_top(
+    smtuc_dataset: str = "smtuc",
+    metrobus_dataset: str = "metrobus",
+    top_n: int = 5,
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
+) -> pd.DataFrame:
+    gtfs_smtuc = load_gtfs(dataset=smtuc_dataset)
+    gtfs_metro = load_gtfs(dataset=metrobus_dataset)
+
+    walk_5_min_m = walk_speed_m_min * 5
+    metro_stops = gtfs_metro.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
+    if metro_stops.empty:
+        return pd.DataFrame()
+
+    out_rows: list[dict] = []
+
+    routes_map_df = gtfs_smtuc.routes.copy()
+    if routes_map_df.empty or "route_id" not in routes_map_df.columns:
+        return pd.DataFrame()
+
+    name_col = "route_short_name" if "route_short_name" in routes_map_df.columns else "route_id"
+    routes_map_df = routes_map_df[["route_id", name_col]].copy()
+    routes_map_df["route_id"] = routes_map_df["route_id"].astype(str)
+    routes_map_df["line"] = routes_map_df[name_col].astype(str)
+
+    trips_enriched = gtfs_smtuc.trips.copy()
+    trips_enriched["route_id"] = trips_enriched["route_id"].astype(str)
+    trips_enriched = trips_enriched.merge(routes_map_df[["route_id", "line"]], on="route_id", how="left")
+    trips_enriched["line"] = trips_enriched["line"].fillna(trips_enriched["route_id"])
+
+    line_to_route_ids = (
+        trips_enriched[["line", "route_id"]]
+        .dropna()
+        .drop_duplicates()
+        .groupby("line")["route_id"]
+        .apply(list)
+        .to_dict()
+    )
+
+    for line, route_ids in line_to_route_ids.items():
+        line_summaries: list[dict] = []
+        for route_id in route_ids:
+            line_summaries.extend(
+                _route_direction_summaries(
+                    gtfs_smtuc=gtfs_smtuc,
+                    route_id=route_id,
+                    metro_stops=metro_stops,
+                    walk_5_min_m=walk_5_min_m,
+                )
+            )
+
+        if not line_summaries:
+            continue
+
+        total_ext_m = sum(s["total_ext_m"] for s in line_summaries)
+        overlap_ext_m = sum(s["overlap_ext_m"] for s in line_summaries)
+        overlap_stops = sum(s["overlap_stops"] for s in line_summaries)
+        total_stops = sum(s["total_stops"] for s in line_summaries)
+        directions_considered = len(line_summaries)
+        avg_freq_min = _line_avg_frequency_min(gtfs_smtuc, route_ids)
+
+        if total_ext_m <= 0:
+            continue
+
+        overlap_pct = (overlap_ext_m / total_ext_m) * 100.0
+
+        out_rows.append(
+            {
+                "line": str(line),
+                "avg_freq_min": avg_freq_min,
+                "overlap_extension_m": round(overlap_ext_m, 1),
+                "line_extension_m": round(total_ext_m, 1),
+                "overlap_pct": round(overlap_pct, 2),
+                "overlap_stops": int(overlap_stops),
+                "total_stops": int(total_stops),
+                "directions_considered": directions_considered,
+            }
+        )
+
+    if not out_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(out_rows)
+    df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
+    return df.sort_values(["overlap_pct", "overlap_extension_m"], ascending=False).head(top_n).reset_index(drop=True)

@@ -7,9 +7,6 @@ from typing import Iterable
 
 import pandas as pd
 
-casa = [40.207883, -8.398107]
-trabalho = [40.186724, -8.416078]  # DEI
-WALK_SPEED_M_MIN = 80.0  # ~4.8 km/h
 
 
 @dataclass

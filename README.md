@@ -4,16 +4,20 @@ visa responder a questao: agora que o metrobus faz parte da mobilidade em coimbr
 
 ## to do :
 - dados:
-- corrigir e limpar dados metrobus: locais das paragens, corrigir horarios
+- corrigir e limpar dados metrobus: locais das paragens, corrigir horarios, arranjar shape.txt
 - atualizar dados smtuc: pq e que da erro no dados.gov?
 
-- probe:
-- separar o que e processamento de dados de funcoes mais complexas
-- limpar slop: evitar duplicados e fazer com que seja mais facil testar eustoes como:
+- gtfs: colocar numa pasta separada? tentar tornar mais pequeno e flexivel
+
+- operations: separar em 2 (route_operations e overlap_operations)
+- brincar mais com os dados: sera que o output está certo sequer? como é que ele chegou a estes valores mm? (mt importante na do overlap) 
+- fazer com que seja mais facil testar eustoes como:
 - como ir de ponto a a b no horario x?
 - quais as paragens mais proximas de um ponto a e b?
 - qual o alcance de uma paragem em 15min em varios horarios
 - vista por linha: frequencia, overlap com o metrobus
+- quais as areas c menos overlap? e dessas quais e que se encontram mais no centro da cidade? e quais têm pior frequência?
+- começar a pensasr em partes para criar um score final de necessidade com base em população, frequencia, overlap ou falta dele
 
 - visualização
 - meter tudo num mapa : linhas, paragens, so smtuc, so metrobus
