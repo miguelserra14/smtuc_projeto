@@ -8,7 +8,6 @@ from typing import Iterable
 import pandas as pd
 
 
-
 @dataclass
 class NearestStopResult:
     dataset: str
@@ -112,5 +111,3 @@ def _resolve_stop_id(gtfs, ref: str) -> str:
         raise ValueError(f"Paragem ambígua '{ref}'. Exemplos: {sample}")
 
     raise ValueError(f"Paragem não encontrada: '{ref}'")
-
-

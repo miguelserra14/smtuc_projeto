@@ -67,7 +67,7 @@ def _find_gtfs_dir(dataset: str, root: Path) -> Path:
 
 
 def _resolve_source_dir(source_dir: Optional[str], dataset: str) -> Path:
-    root = Path(__file__).resolve().parents[2]  # raiz do projeto
+    root = Path(__file__).resolve().parents[3]  # raiz do projeto
 
     if source_dir:
         p = Path(source_dir)
@@ -161,7 +161,7 @@ def _main() -> None:
     p_ins.add_argument("--source-dir", default=None, help="Override de diretório GTFS")
 
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
 
     if args.cmd == "integrate":
         source = Path(args.source).expanduser().resolve()

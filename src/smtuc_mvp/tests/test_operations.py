@@ -6,23 +6,23 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from smtuc_mvp.gtfs import load_gtfs
 
-from smtuc_mvp.operations import (
+from smtuc_mvp.operations.operations import (
     WALK_SPEED_M_MIN,
     commute_options_for_datetime,
     compare_nearest_network,
     find_direct_options,
-    line_overlap_top,
     nearest_stop_for_dataset,
     next_monday,
     suggest_current_commute_options,
     suggest_random_commute_options,
 )
+from smtuc_mvp.operations.operations_overlap import line_overlap_top
 
 WALK_5_MIN_M = WALK_SPEED_M_MIN * 5
 casa = [40.207883, -8.398107]
 trabalho = [40.186724, -8.416078]  # DEI
+estadio=[40.203809, -8.407904]
 
 
 def _dataset_dir(dataset: str) -> Path:
@@ -39,7 +39,7 @@ def _require_dataset(dataset: str) -> Path:
 
 
 @pytest.mark.integration
-def test_scenario_nearest_home_work_with_prints() -> None:
+def test_nearest_home_work() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
@@ -59,7 +59,7 @@ def test_scenario_nearest_home_work_with_prints() -> None:
 
 
 @pytest.mark.integration
-def test_scenario_best_route_random_monday_now_with_prints() -> None:
+def test_best_route_scenarios() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
@@ -102,7 +102,7 @@ def test_scenario_best_route_random_monday_now_with_prints() -> None:
 
 
 @pytest.mark.integration
-def test_scenario_top5_smtuc_overlap_with_metrobus_with_prints() -> None:
+def test_top5_overlap() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
@@ -149,7 +149,7 @@ def test_scenario_top5_smtuc_overlap_with_metrobus_with_prints() -> None:
 
 
 @pytest.mark.integration
-def test_scenario_compare_nearest_network_contract() -> None:
+def test_compare_nearest_network() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
