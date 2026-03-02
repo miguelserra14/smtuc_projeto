@@ -149,6 +149,54 @@ def test_top5_overlap() -> None:
 
 
 @pytest.mark.integration
+def test_bottom5_overlap() -> None:
+    _require_dataset("smtuc")
+    _require_dataset("metrobus")
+
+    all_lines = line_overlap_top(top_n=10000)
+    bottom5 = all_lines.sort_values(["overlap_pct", "overlap_extension_m"], ascending=[True, True]).head(5)
+
+    print("\n=== Bottom 5 linhas SMTUC com menor overlap com Metrobus (<=5 min a pé) ===")
+    if bottom5.empty:
+        print("Sem dados suficientes para calcular overlap.")
+    else:
+        display = bottom5.rename(
+            columns={
+                "line": "Linha",
+                "avg_freq_min": "Freq(min)",
+                "overlap_extension_m": "Overlap(m)",
+                "line_extension_m": "Extensão(m)",
+                "overlap_pct": "Overlap(%)",
+                "overlap_stops": "Paragens Overlapped",
+                "total_stops": "Paragens Totais",
+                "directions_considered": "Sentidos.",
+            }
+        )
+        if "Freq(min)" in display.columns:
+            display["Freq(min)"] = display["Freq(min)"].map(
+                lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
+            )
+        ordered_cols = [
+            c
+            for c in [
+                "Linha",
+                "Overlap(m)",
+                "Extensão(m)",
+                "Overlap(%)",
+                "Paragens Overlapped",
+                "Paragens Totais",
+                "Sentidos.",
+                "Freq(min)",
+            ]
+            if c in display.columns
+        ]
+        print(display[ordered_cols].to_string(index=False))
+
+    assert isinstance(bottom5, pd.DataFrame)
+    assert len(bottom5) <= 5
+
+
+@pytest.mark.integration
 def test_compare_nearest_network() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
