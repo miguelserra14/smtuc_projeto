@@ -1,29 +1,77 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from smtuc_mvp.config import (
+    HOME_COORD,
+    OVERLAP_SCAN_TOP_N,
+    OVERLAP_TABLE_TOP_N,
+    STADIUM_COORD,
+    STADIUM_MIN_EXTENSION_PCT,
+    STADIUM_RADIUS_M,
+    WORK_COORD,
+)
 
 from smtuc_mvp.operations.operations import (
-    WALK_SPEED_M_MIN,
     commute_options_for_datetime,
     compare_nearest_network,
-    find_direct_options,
     nearest_stop_for_dataset,
     next_monday,
     suggest_current_commute_options,
     suggest_random_commute_options,
 )
-from smtuc_mvp.operations.operations_overlap import line_overlap_top
-from smtuc_mvp.operations.operations_overlap import line_low_overlap_near_stadium_top
+from smtuc_mvp.operations.operations_overlap import (
+    line_low_overlap_near_stadium_top,
+    line_overlap_top,
+)
 
-WALK_5_MIN_M = WALK_SPEED_M_MIN * 5
-casa = [40.207883, -8.398107]
-trabalho = [40.186724, -8.416078]  # DEI
-estadio=[40.203809, -8.407904]
+OVERLAP_RENAME = {
+    "line": "Linha",
+    "avg_freq_min": "Freq",
+    "overlap_extension_m": "Ovlp(m)",
+    "line_extension_m": "Ext(m)",
+    "overlap_pct": "Ovlp(%)",
+    "overlap_stops": "Parag.Ovlp",
+    "total_stops": "Parag.Tot",
+    "directions_considered": "Sent",
+}
+
+
+def _print_table(df: pd.DataFrame) -> None:
+    with pd.option_context(
+        "display.max_columns",
+        None,
+        "display.width",
+        1000,
+        "display.expand_frame_repr",
+        False,
+        "display.colheader_justify",
+        "left",
+    ):
+        print(df.to_string(index=False, line_width=1000))
+
+
+def _format_overlap_table(df: pd.DataFrame, include_radius: bool = False) -> pd.DataFrame:
+    display = df.rename(columns=OVERLAP_RENAME)
+    if include_radius:
+        display = display.rename(
+            columns={
+                "radius_extension_m": "Ext2km(m)",
+                "radius_extension_pct": "%Ext2km",
+            }
+        )
+    if "Freq" in display.columns:
+        display["Freq"] = display["Freq"].map(lambda x: "-" if pd.isna(x) else f"{float(x):.1f}")
+    ordered = ["Linha", "Ovlp(m)", "Ext(m)", "Ovlp(%)"]
+    if include_radius:
+        ordered.extend(["Ext2km(m)", "%Ext2km"])
+    ordered.extend(["Parag.Ovlp", "Parag.Tot", "Sent", "Freq"])
+    ordered_cols = [c for c in ordered if c in display.columns]
+    return display[ordered_cols]
 
 
 def _dataset_dir(dataset: str) -> Path:
@@ -44,10 +92,10 @@ def test_nearest_home_work() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
-    home_smtuc = nearest_stop_for_dataset("smtuc", casa[0], casa[1])
-    home_metro = nearest_stop_for_dataset("metrobus", casa[0], casa[1])
-    work_smtuc = nearest_stop_for_dataset("smtuc", trabalho[0], trabalho[1])
-    work_metro = nearest_stop_for_dataset("metrobus", trabalho[0], trabalho[1])
+    home_smtuc = nearest_stop_for_dataset("smtuc", HOME_COORD[0], HOME_COORD[1])
+    home_metro = nearest_stop_for_dataset("metrobus", HOME_COORD[0], HOME_COORD[1])
+    work_smtuc = nearest_stop_for_dataset("smtuc", WORK_COORD[0], WORK_COORD[1])
+    work_metro = nearest_stop_for_dataset("metrobus", WORK_COORD[0], WORK_COORD[1])
 
     print("\n=== Paragens mais próximas (casa e trabalho) ===")
     print(f"Casa SMTUC   -> {home_smtuc.stop_name} ({home_smtuc.stop_id}) | {home_smtuc.distance_m:.1f} m")
@@ -64,19 +112,19 @@ def test_best_route_scenarios() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
-    rnd = suggest_random_commute_options(casa[0], casa[1], trabalho[0], trabalho[1], limit=1, tries=10)
+    rnd = suggest_random_commute_options(HOME_COORD[0], HOME_COORD[1], WORK_COORD[0], WORK_COORD[1], limit=1, tries=10)
 
     monday = next_monday(date.today())
     monday_df = commute_options_for_datetime(
-        home_lat=casa[0],
-        home_lon=casa[1],
-        work_lat=trabalho[0],
-        work_lon=trabalho[1],
+        home_lat=HOME_COORD[0],
+        home_lon=HOME_COORD[1],
+        work_lat=WORK_COORD[0],
+        work_lon=WORK_COORD[1],
         day_str=monday.strftime("%Y-%m-%d"),
         time_str="08:40:00",
     )
 
-    now_df = suggest_current_commute_options(casa[0], casa[1], trabalho[0], trabalho[1], limit=1)
+    now_df = suggest_current_commute_options(HOME_COORD[0], HOME_COORD[1], WORK_COORD[0], WORK_COORD[1], limit=1)
 
     print("\n=== Melhor percurso por cenário ===")
     if rnd.empty:
@@ -107,53 +155,13 @@ def test_top5_overlap() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
-    top5 = line_overlap_top()
+    top5 = line_overlap_top(top_n=OVERLAP_TABLE_TOP_N)
 
     print("\n=== Top 5 linhas SMTUC com maior overlap com Metrobus (<=5 min a pé) ===")
     if top5.empty:
         print("Sem dados suficientes para calcular overlap.")
     else:
-        display = top5.rename(
-            columns={
-                "line": "Linha",
-                "avg_freq_min": "Freq",
-                "overlap_extension_m": "Ovlp(m)",
-                "line_extension_m": "Ext(m)",
-                "overlap_pct": "Ovlp(%)",
-                "overlap_stops": "Parag.Ovlp",
-                "total_stops": "Parag.Tot",
-                "directions_considered": "Sent",
-            }
-        )
-        if "Freq" in display.columns:
-            display["Freq"] = display["Freq"].map(
-                lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
-            )
-        ordered_cols = [
-            c
-            for c in [
-                "Linha",
-                "Ovlp(m)",
-                "Ext(m)",
-                "Ovlp(%)",
-                "Parag.Ovlp",
-                "Parag.Tot",
-                "Sent",
-                "Freq",
-            ]
-            if c in display.columns
-        ]
-        with pd.option_context(
-            "display.max_columns",
-            None,
-            "display.width",
-            1000,
-            "display.expand_frame_repr",
-            False,
-            "display.colheader_justify",
-            "left",
-        ):
-            print(display[ordered_cols].to_string(index=False, line_width=1000))
+        _print_table(_format_overlap_table(top5))
 
     assert isinstance(top5, pd.DataFrame)
     assert len(top5) <= 5
@@ -164,54 +172,14 @@ def test_bottom5_overlap() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
-    all_lines = line_overlap_top(top_n=10000)
-    bottom5 = all_lines.sort_values(["overlap_pct", "overlap_extension_m"], ascending=[True, True]).head(5)
+    all_lines = line_overlap_top(top_n=OVERLAP_SCAN_TOP_N)
+    bottom5 = all_lines.sort_values(["overlap_pct", "overlap_extension_m"], ascending=[True, True]).head(OVERLAP_TABLE_TOP_N)
 
     print("\n=== Bottom 5 linhas SMTUC com menor overlap com Metrobus (<=5 min a pé) ===")
     if bottom5.empty:
         print("Sem dados suficientes para calcular overlap.")
     else:
-        display = bottom5.rename(
-            columns={
-                "line": "Linha",
-                "avg_freq_min": "Freq",
-                "overlap_extension_m": "Ovlp(m)",
-                "line_extension_m": "Ext(m)",
-                "overlap_pct": "Ovlp(%)",
-                "overlap_stops": "Parag.Ovlp",
-                "total_stops": "Parag.Tot",
-                "directions_considered": "Sent",
-            }
-        )
-        if "Freq" in display.columns:
-            display["Freq"] = display["Freq"].map(
-                lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
-            )
-        ordered_cols = [
-            c
-            for c in [
-                "Linha",
-                "Ovlp(m)",
-                "Ext(m)",
-                "Ovlp(%)",
-                "Parag.Ovlp",
-                "Parag.Tot",
-                "Sent",
-                "Freq",
-            ]
-            if c in display.columns
-        ]
-        with pd.option_context(
-            "display.max_columns",
-            None,
-            "display.width",
-            1000,
-            "display.expand_frame_repr",
-            False,
-            "display.colheader_justify",
-            "left",
-        ):
-            print(display[ordered_cols].to_string(index=False, line_width=1000))
+        _print_table(_format_overlap_table(bottom5))
 
     assert isinstance(bottom5, pd.DataFrame)
     assert len(bottom5) <= 5
@@ -223,60 +191,18 @@ def test_bottom5_overlap_near_stadium() -> None:
     _require_dataset("metrobus")
 
     out = line_low_overlap_near_stadium_top(
-        stadium_lat=estadio[0],
-        stadium_lon=estadio[1],
-        radius_m=2000.0,
-        min_radius_extension_pct=50.0,
-        top_n=5,
+        stadium_lat=STADIUM_COORD[0],
+        stadium_lon=STADIUM_COORD[1],
+        radius_m=STADIUM_RADIUS_M,
+        min_radius_extension_pct=STADIUM_MIN_EXTENSION_PCT,
+        top_n=OVERLAP_TABLE_TOP_N,
     )
 
     print("\n=== Bottom 5 linhas com menor overlap e >=50% da extensão a <=2km do estádio ===")
     if out.empty:
         print("Sem dados suficientes para o critério de estádio.")
     else:
-        display = out.rename(
-            columns={
-                "line": "Linha",
-                "avg_freq_min": "Freq",
-                "overlap_extension_m": "Ovlp(m)",
-                "line_extension_m": "Ext(m)",
-                "overlap_pct": "Ovlp(%)",
-                "overlap_stops": "Parag.Ovlp",
-                "total_stops": "Parag.Tot",
-                "directions_considered": "Sent",
-                "radius_extension_m": "Ext2km(m)",
-                "radius_extension_pct": "%Ext2km",
-            }
-        )
-        if "Freq" in display.columns:
-            display["Freq"] = display["Freq"].map(lambda x: "-" if pd.isna(x) else f"{float(x):.1f}")
-        ordered_cols = [
-            c
-            for c in [
-                "Linha",
-                "Ovlp(m)",
-                "Ext(m)",
-                "Ovlp(%)",
-                "Ext2km(m)",
-                "%Ext2km",
-                "Parag.Ovlp",
-                "Parag.Tot",
-                "Sent",
-                "Freq",
-            ]
-            if c in display.columns
-        ]
-        with pd.option_context(
-            "display.max_columns",
-            None,
-            "display.width",
-            1000,
-            "display.expand_frame_repr",
-            False,
-            "display.colheader_justify",
-            "left",
-        ):
-            print(display[ordered_cols].to_string(index=False, line_width=1000))
+        _print_table(_format_overlap_table(out, include_radius=True))
 
     assert isinstance(out, pd.DataFrame)
     assert len(out) <= 5
@@ -289,7 +215,7 @@ def test_compare_nearest_network() -> None:
     _require_dataset("smtuc")
     _require_dataset("metrobus")
 
-    smtuc, metrobus, winner = compare_nearest_network(casa[0], casa[1])
+    smtuc, metrobus, winner = compare_nearest_network(HOME_COORD[0], HOME_COORD[1])
     assert winner in {"smtuc", "metrobus"}
     assert smtuc.distance_m >= 0
     assert metrobus.distance_m >= 0

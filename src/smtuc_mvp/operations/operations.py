@@ -6,6 +6,7 @@ from functools import lru_cache
 
 import pandas as pd
 
+from smtuc_mvp.config import WALK_SPEED_M_MIN
 from smtuc_mvp.gtfs_processing.gtfs import load_gtfs
 from smtuc_mvp.gtfs_processing.gtfs_probe import (
     NearestStopResult,
@@ -15,9 +16,6 @@ from smtuc_mvp.gtfs_processing.gtfs_probe import (
     _resolve_stop_id,
     _to_seconds,
 )
-
-WALK_SPEED_M_MIN = 80.0  # ~4.8 km/h
-
 
 @lru_cache(maxsize=8)
 def _load_gtfs_cached(dataset: str):

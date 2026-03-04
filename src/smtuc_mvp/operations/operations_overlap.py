@@ -5,6 +5,13 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
+from smtuc_mvp.config import (
+    OVERLAP_TABLE_TOP_N,
+    STADIUM_COORD,
+    STADIUM_MIN_EXTENSION_PCT,
+    STADIUM_RADIUS_M,
+    WALK_SPEED_M_MIN,
+)
 from smtuc_mvp.gtfs_processing.gtfs import load_gtfs
 
 
@@ -250,8 +257,8 @@ def _route_direction_radius_coverage_summaries(
 def line_overlap_top(
     smtuc_dataset: str = "smtuc",
     metrobus_dataset: str = "metrobus",
-    top_n: int = 5,
-    walk_speed_m_min: float = 80.0,
+    top_n: int = OVERLAP_TABLE_TOP_N,
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
     gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
     gtfs_metro = _load_gtfs_cached(metrobus_dataset)
@@ -335,14 +342,14 @@ def line_overlap_top(
 
 
 def line_low_overlap_near_stadium_top(
-    stadium_lat: float = 40.203809,
-    stadium_lon: float = -8.407904,
-    radius_m: float = 2000.0,
-    min_radius_extension_pct: float = 50.0,
-    top_n: int = 5,
+    stadium_lat: float = STADIUM_COORD[0],
+    stadium_lon: float = STADIUM_COORD[1],
+    radius_m: float = STADIUM_RADIUS_M,
+    min_radius_extension_pct: float = STADIUM_MIN_EXTENSION_PCT,
+    top_n: int = OVERLAP_TABLE_TOP_N,
     smtuc_dataset: str = "smtuc",
     metrobus_dataset: str = "metrobus",
-    walk_speed_m_min: float = 80.0,
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
     gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
     gtfs_metro = _load_gtfs_cached(metrobus_dataset)
