@@ -18,6 +18,7 @@ from smtuc_mvp.operations.operations import (
     suggest_random_commute_options,
 )
 from smtuc_mvp.operations.operations_overlap import line_overlap_top
+from smtuc_mvp.operations.operations_overlap import line_low_overlap_near_stadium_top
 
 WALK_5_MIN_M = WALK_SPEED_M_MIN * 5
 casa = [40.207883, -8.398107]
@@ -115,34 +116,44 @@ def test_top5_overlap() -> None:
         display = top5.rename(
             columns={
                 "line": "Linha",
-                "avg_freq_min": "Freq(min)",
-                "overlap_extension_m": "Overlap(m)",
-                "line_extension_m": "Extensão(m)",
-                "overlap_pct": "Overlap(%)",
-                "overlap_stops": "Paragens Overlapped",
-                "total_stops": "Paragens Totais",
-                "directions_considered": "Sentidos.",
+                "avg_freq_min": "Freq",
+                "overlap_extension_m": "Ovlp(m)",
+                "line_extension_m": "Ext(m)",
+                "overlap_pct": "Ovlp(%)",
+                "overlap_stops": "Parag.Ovlp",
+                "total_stops": "Parag.Tot",
+                "directions_considered": "Sent",
             }
         )
-        if "Freq(min)" in display.columns:
-            display["Freq(min)"] = display["Freq(min)"].map(
+        if "Freq" in display.columns:
+            display["Freq"] = display["Freq"].map(
                 lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
             )
         ordered_cols = [
             c
             for c in [
                 "Linha",
-                "Overlap(m)",
-                "Extensão(m)",
-                "Overlap(%)",
-                "Paragens Overlapped",
-                "Paragens Totais",
-                "Sentidos.",
-                "Freq(min)",
+                "Ovlp(m)",
+                "Ext(m)",
+                "Ovlp(%)",
+                "Parag.Ovlp",
+                "Parag.Tot",
+                "Sent",
+                "Freq",
             ]
             if c in display.columns
         ]
-        print(display[ordered_cols].to_string(index=False))
+        with pd.option_context(
+            "display.max_columns",
+            None,
+            "display.width",
+            1000,
+            "display.expand_frame_repr",
+            False,
+            "display.colheader_justify",
+            "left",
+        ):
+            print(display[ordered_cols].to_string(index=False, line_width=1000))
 
     assert isinstance(top5, pd.DataFrame)
     assert len(top5) <= 5
@@ -163,37 +174,114 @@ def test_bottom5_overlap() -> None:
         display = bottom5.rename(
             columns={
                 "line": "Linha",
-                "avg_freq_min": "Freq(min)",
-                "overlap_extension_m": "Overlap(m)",
-                "line_extension_m": "Extensão(m)",
-                "overlap_pct": "Overlap(%)",
-                "overlap_stops": "Paragens Overlapped",
-                "total_stops": "Paragens Totais",
-                "directions_considered": "Sentidos.",
+                "avg_freq_min": "Freq",
+                "overlap_extension_m": "Ovlp(m)",
+                "line_extension_m": "Ext(m)",
+                "overlap_pct": "Ovlp(%)",
+                "overlap_stops": "Parag.Ovlp",
+                "total_stops": "Parag.Tot",
+                "directions_considered": "Sent",
             }
         )
-        if "Freq(min)" in display.columns:
-            display["Freq(min)"] = display["Freq(min)"].map(
+        if "Freq" in display.columns:
+            display["Freq"] = display["Freq"].map(
                 lambda x: "-" if pd.isna(x) else f"{float(x):.1f}"
             )
         ordered_cols = [
             c
             for c in [
                 "Linha",
-                "Overlap(m)",
-                "Extensão(m)",
-                "Overlap(%)",
-                "Paragens Overlapped",
-                "Paragens Totais",
-                "Sentidos.",
-                "Freq(min)",
+                "Ovlp(m)",
+                "Ext(m)",
+                "Ovlp(%)",
+                "Parag.Ovlp",
+                "Parag.Tot",
+                "Sent",
+                "Freq",
             ]
             if c in display.columns
         ]
-        print(display[ordered_cols].to_string(index=False))
+        with pd.option_context(
+            "display.max_columns",
+            None,
+            "display.width",
+            1000,
+            "display.expand_frame_repr",
+            False,
+            "display.colheader_justify",
+            "left",
+        ):
+            print(display[ordered_cols].to_string(index=False, line_width=1000))
 
     assert isinstance(bottom5, pd.DataFrame)
     assert len(bottom5) <= 5
+
+
+@pytest.mark.integration
+def test_bottom5_overlap_near_stadium() -> None:
+    _require_dataset("smtuc")
+    _require_dataset("metrobus")
+
+    out = line_low_overlap_near_stadium_top(
+        stadium_lat=estadio[0],
+        stadium_lon=estadio[1],
+        radius_m=2000.0,
+        min_radius_extension_pct=50.0,
+        top_n=5,
+    )
+
+    print("\n=== Bottom 5 linhas com menor overlap e >=50% da extensão a <=2km do estádio ===")
+    if out.empty:
+        print("Sem dados suficientes para o critério de estádio.")
+    else:
+        display = out.rename(
+            columns={
+                "line": "Linha",
+                "avg_freq_min": "Freq",
+                "overlap_extension_m": "Ovlp(m)",
+                "line_extension_m": "Ext(m)",
+                "overlap_pct": "Ovlp(%)",
+                "overlap_stops": "Parag.Ovlp",
+                "total_stops": "Parag.Tot",
+                "directions_considered": "Sent",
+                "radius_extension_m": "Ext2km(m)",
+                "radius_extension_pct": "%Ext2km",
+            }
+        )
+        if "Freq" in display.columns:
+            display["Freq"] = display["Freq"].map(lambda x: "-" if pd.isna(x) else f"{float(x):.1f}")
+        ordered_cols = [
+            c
+            for c in [
+                "Linha",
+                "Ovlp(m)",
+                "Ext(m)",
+                "Ovlp(%)",
+                "Ext2km(m)",
+                "%Ext2km",
+                "Parag.Ovlp",
+                "Parag.Tot",
+                "Sent",
+                "Freq",
+            ]
+            if c in display.columns
+        ]
+        with pd.option_context(
+            "display.max_columns",
+            None,
+            "display.width",
+            1000,
+            "display.expand_frame_repr",
+            False,
+            "display.colheader_justify",
+            "left",
+        ):
+            print(display[ordered_cols].to_string(index=False, line_width=1000))
+
+    assert isinstance(out, pd.DataFrame)
+    assert len(out) <= 5
+    if not out.empty:
+        assert (out["radius_extension_pct"] >= 50.0).all()
 
 
 @pytest.mark.integration

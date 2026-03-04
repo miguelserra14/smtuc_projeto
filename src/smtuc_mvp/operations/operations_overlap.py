@@ -178,6 +178,75 @@ def _line_avg_frequency_min(gtfs_smtuc, route_ids: list[str]) -> float | None:
     return round((sum(headways_s) / len(headways_s)) / 60.0, 1)
 
 
+def _route_direction_radius_coverage_summaries(
+    gtfs_smtuc,
+    route_id: str,
+    center_lat: float,
+    center_lon: float,
+    radius_m: float,
+) -> list[dict]:
+    route_trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str) == str(route_id)].copy()
+    if route_trips.empty:
+        return []
+
+    if "direction_id" in route_trips.columns:
+        direction_values = route_trips["direction_id"].dropna().astype(str).unique().tolist()
+        if not direction_values:
+            direction_values = ["na"]
+    else:
+        direction_values = ["na"]
+
+    summaries: list[dict] = []
+
+    for direction in direction_values:
+        if direction == "na" and "direction_id" not in route_trips.columns:
+            subset = route_trips
+        elif direction == "na":
+            subset = route_trips
+        else:
+            subset = route_trips[route_trips["direction_id"].astype(str) == direction]
+
+        route_stops = _representative_route_stops_for_subset(gtfs_smtuc, subset)
+        route_stops = route_stops.dropna(subset=["stop_lat", "stop_lon"]).reset_index(drop=True)
+        if len(route_stops) < 2:
+            continue
+
+        route_lat = route_stops["stop_lat"].astype(float).to_numpy()
+        route_lon = route_stops["stop_lon"].astype(float).to_numpy()
+
+        dist_to_center = _haversine_pairwise_m(
+            from_lat=np.full(route_lat.shape, center_lat, dtype=float),
+            from_lon=np.full(route_lon.shape, center_lon, dtype=float),
+            to_lat=route_lat,
+            to_lon=route_lon,
+        )
+        in_radius = dist_to_center <= radius_m
+
+        seg_lengths = _haversine_pairwise_m(
+            from_lat=route_lat[:-1],
+            from_lon=route_lon[:-1],
+            to_lat=route_lat[1:],
+            to_lon=route_lon[1:],
+        )
+        in_radius_segments = in_radius[:-1] & in_radius[1:]
+
+        total_ext_m = float(seg_lengths.sum())
+        in_radius_ext_m = float(seg_lengths[in_radius_segments].sum())
+
+        if total_ext_m <= 0:
+            continue
+
+        summaries.append(
+            {
+                "direction": direction,
+                "total_ext_m": total_ext_m,
+                "in_radius_ext_m": in_radius_ext_m,
+            }
+        )
+
+    return summaries
+
+
 def line_overlap_top(
     smtuc_dataset: str = "smtuc",
     metrobus_dataset: str = "metrobus",
@@ -263,3 +332,120 @@ def line_overlap_top(
     df = pd.DataFrame(out_rows)
     df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
     return df.sort_values(["overlap_pct", "overlap_extension_m"], ascending=False).head(top_n).reset_index(drop=True)
+
+
+def line_low_overlap_near_stadium_top(
+    stadium_lat: float = 40.203809,
+    stadium_lon: float = -8.407904,
+    radius_m: float = 2000.0,
+    min_radius_extension_pct: float = 50.0,
+    top_n: int = 5,
+    smtuc_dataset: str = "smtuc",
+    metrobus_dataset: str = "metrobus",
+    walk_speed_m_min: float = 80.0,
+) -> pd.DataFrame:
+    gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
+    gtfs_metro = _load_gtfs_cached(metrobus_dataset)
+
+    walk_5_min_m = walk_speed_m_min * 5
+    metro_stops = gtfs_metro.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
+    if metro_stops.empty:
+        return pd.DataFrame()
+
+    routes_map_df = gtfs_smtuc.routes.copy()
+    if routes_map_df.empty or "route_id" not in routes_map_df.columns:
+        return pd.DataFrame()
+
+    name_col = "route_short_name" if "route_short_name" in routes_map_df.columns else "route_id"
+    routes_map_df = routes_map_df[["route_id", name_col]].copy()
+    routes_map_df["route_id"] = routes_map_df["route_id"].astype(str)
+    routes_map_df["line"] = routes_map_df[name_col].astype(str)
+
+    trips_enriched = gtfs_smtuc.trips.copy()
+    trips_enriched["route_id"] = trips_enriched["route_id"].astype(str)
+    trips_enriched = trips_enriched.merge(routes_map_df[["route_id", "line"]], on="route_id", how="left")
+    trips_enriched["line"] = trips_enriched["line"].fillna(trips_enriched["route_id"])
+
+    line_to_route_ids = (
+        trips_enriched[["line", "route_id"]]
+        .dropna()
+        .drop_duplicates()
+        .groupby("line")["route_id"]
+        .apply(list)
+        .to_dict()
+    )
+
+    out_rows: list[dict] = []
+
+    for line, route_ids in line_to_route_ids.items():
+        overlap_summaries: list[dict] = []
+        radius_summaries: list[dict] = []
+        for route_id in route_ids:
+            overlap_summaries.extend(
+                _route_direction_summaries(
+                    gtfs_smtuc=gtfs_smtuc,
+                    route_id=route_id,
+                    metro_stops=metro_stops,
+                    walk_5_min_m=walk_5_min_m,
+                )
+            )
+            radius_summaries.extend(
+                _route_direction_radius_coverage_summaries(
+                    gtfs_smtuc=gtfs_smtuc,
+                    route_id=route_id,
+                    center_lat=stadium_lat,
+                    center_lon=stadium_lon,
+                    radius_m=radius_m,
+                )
+            )
+
+        if not overlap_summaries or not radius_summaries:
+            continue
+
+        total_ext_m = sum(s["total_ext_m"] for s in overlap_summaries)
+        overlap_ext_m = sum(s["overlap_ext_m"] for s in overlap_summaries)
+        overlap_stops = sum(s["overlap_stops"] for s in overlap_summaries)
+        total_stops = sum(s["total_stops"] for s in overlap_summaries)
+        directions_considered = len(overlap_summaries)
+        avg_freq_min = _line_avg_frequency_min(gtfs_smtuc, route_ids)
+
+        radius_total_ext_m = sum(s["total_ext_m"] for s in radius_summaries)
+        radius_ext_m = sum(s["in_radius_ext_m"] for s in radius_summaries)
+
+        if total_ext_m <= 0 or radius_total_ext_m <= 0:
+            continue
+
+        overlap_pct = (overlap_ext_m / total_ext_m) * 100.0
+        radius_extension_pct = (radius_ext_m / radius_total_ext_m) * 100.0
+        if radius_extension_pct < min_radius_extension_pct:
+            continue
+
+        out_rows.append(
+            {
+                "line": str(line),
+                "avg_freq_min": avg_freq_min,
+                "overlap_extension_m": round(overlap_ext_m, 1),
+                "line_extension_m": round(total_ext_m, 1),
+                "overlap_pct": round(overlap_pct, 2),
+                "overlap_stops": int(overlap_stops),
+                "total_stops": int(total_stops),
+                "directions_considered": directions_considered,
+                "radius_extension_m": round(radius_ext_m, 1),
+                "radius_extension_pct": round(radius_extension_pct, 2),
+                "radius_m": float(radius_m),
+            }
+        )
+
+    if not out_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(out_rows)
+    df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
+    return (
+        df.sort_values(
+            ["overlap_pct", "overlap_extension_m", "radius_extension_pct"],
+            ascending=[True, True, False],
+        )
+        .head(top_n)
+        .reset_index(drop=True)
+    )
