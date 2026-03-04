@@ -185,6 +185,133 @@ def _line_avg_frequency_min(gtfs_smtuc, route_ids: list[str]) -> float | None:
     return round((sum(headways_s) / len(headways_s)) / 60.0, 1)
 
 
+def _line_to_route_ids(gtfs_smtuc) -> dict[str, list[str]]:
+    routes_map_df = gtfs_smtuc.routes.copy()
+    if routes_map_df.empty or "route_id" not in routes_map_df.columns:
+        return {}
+
+    name_col = "route_short_name" if "route_short_name" in routes_map_df.columns else "route_id"
+    routes_map_df = routes_map_df[["route_id", name_col]].copy()
+    routes_map_df["route_id"] = routes_map_df["route_id"].astype(str)
+    routes_map_df["line"] = routes_map_df[name_col].astype(str)
+
+    trips_enriched = gtfs_smtuc.trips.copy()
+    trips_enriched["route_id"] = trips_enriched["route_id"].astype(str)
+    trips_enriched = trips_enriched.merge(routes_map_df[["route_id", "line"]], on="route_id", how="left")
+    trips_enriched["line"] = trips_enriched["line"].fillna(trips_enriched["route_id"])
+
+    return (
+        trips_enriched[["line", "route_id"]]
+        .dropna()
+        .drop_duplicates()
+        .groupby("line")["route_id"]
+        .apply(list)
+        .to_dict()
+    )
+
+
+def _overlap_context(
+    smtuc_dataset: str,
+    metrobus_dataset: str,
+    walk_speed_m_min: float,
+) -> tuple[object, pd.DataFrame, dict[str, list[str]], float] | tuple[None, pd.DataFrame, dict[str, list[str]], float]:
+    gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
+    gtfs_metro = _load_gtfs_cached(metrobus_dataset)
+
+    walk_5_min_m = walk_speed_m_min * 5
+    metro_stops = gtfs_metro.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
+    if metro_stops.empty:
+        return None, pd.DataFrame(), {}, walk_5_min_m
+
+    line_to_route_ids = _line_to_route_ids(gtfs_smtuc)
+    if not line_to_route_ids:
+        return None, pd.DataFrame(), {}, walk_5_min_m
+
+    return gtfs_smtuc, metro_stops, line_to_route_ids, walk_5_min_m
+
+
+def _aggregate_overlap_for_line(
+    gtfs_smtuc,
+    route_ids: list[str],
+    metro_stops: pd.DataFrame,
+    walk_5_min_m: float,
+) -> dict | None:
+    line_summaries: list[dict] = []
+    for route_id in route_ids:
+        line_summaries.extend(
+            _route_direction_summaries(
+                gtfs_smtuc=gtfs_smtuc,
+                route_id=route_id,
+                metro_stops=metro_stops,
+                walk_5_min_m=walk_5_min_m,
+            )
+        )
+
+    if not line_summaries:
+        return None
+
+    total_ext_m = sum(s["total_ext_m"] for s in line_summaries)
+    if total_ext_m <= 0:
+        return None
+
+    overlap_ext_m = sum(s["overlap_ext_m"] for s in line_summaries)
+    return {
+        "line_extension_m": total_ext_m,
+        "overlap_extension_m": overlap_ext_m,
+        "overlap_pct": (overlap_ext_m / total_ext_m) * 100.0,
+        "overlap_stops": int(sum(s["overlap_stops"] for s in line_summaries)),
+        "total_stops": int(sum(s["total_stops"] for s in line_summaries)),
+        "directions_considered": len(line_summaries),
+    }
+
+
+def _aggregate_radius_for_line(
+    gtfs_smtuc,
+    route_ids: list[str],
+    center_lat: float,
+    center_lon: float,
+    radius_m: float,
+) -> dict | None:
+    radius_summaries: list[dict] = []
+    for route_id in route_ids:
+        radius_summaries.extend(
+            _route_direction_radius_coverage_summaries(
+                gtfs_smtuc=gtfs_smtuc,
+                route_id=route_id,
+                center_lat=center_lat,
+                center_lon=center_lon,
+                radius_m=radius_m,
+            )
+        )
+
+    if not radius_summaries:
+        return None
+
+    radius_total_ext_m = sum(s["total_ext_m"] for s in radius_summaries)
+    if radius_total_ext_m <= 0:
+        return None
+
+    radius_ext_m = sum(s["in_radius_ext_m"] for s in radius_summaries)
+    return {
+        "radius_extension_m": radius_ext_m,
+        "radius_extension_pct": (radius_ext_m / radius_total_ext_m) * 100.0,
+    }
+
+
+def _finalize_line_rows(
+    out_rows: list[dict],
+    top_n: int,
+    sort_cols: list[str],
+    ascending: list[bool],
+) -> pd.DataFrame:
+    if not out_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(out_rows)
+    df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
+    return df.sort_values(sort_cols, ascending=ascending).head(top_n).reset_index(drop=True)
+
+
 def _route_direction_radius_coverage_summaries(
     gtfs_smtuc,
     route_id: str,
@@ -260,85 +387,45 @@ def line_overlap_top(
     top_n: int = OVERLAP_TABLE_TOP_N,
     walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
-    gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
-    gtfs_metro = _load_gtfs_cached(metrobus_dataset)
-
-    walk_5_min_m = walk_speed_m_min * 5
-    metro_stops = gtfs_metro.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
-    if metro_stops.empty:
+    gtfs_smtuc, metro_stops, line_to_route_ids, walk_5_min_m = _overlap_context(
+        smtuc_dataset=smtuc_dataset,
+        metrobus_dataset=metrobus_dataset,
+        walk_speed_m_min=walk_speed_m_min,
+    )
+    if gtfs_smtuc is None:
         return pd.DataFrame()
 
     out_rows: list[dict] = []
 
-    routes_map_df = gtfs_smtuc.routes.copy()
-    if routes_map_df.empty or "route_id" not in routes_map_df.columns:
-        return pd.DataFrame()
-
-    name_col = "route_short_name" if "route_short_name" in routes_map_df.columns else "route_id"
-    routes_map_df = routes_map_df[["route_id", name_col]].copy()
-    routes_map_df["route_id"] = routes_map_df["route_id"].astype(str)
-    routes_map_df["line"] = routes_map_df[name_col].astype(str)
-
-    trips_enriched = gtfs_smtuc.trips.copy()
-    trips_enriched["route_id"] = trips_enriched["route_id"].astype(str)
-    trips_enriched = trips_enriched.merge(routes_map_df[["route_id", "line"]], on="route_id", how="left")
-    trips_enriched["line"] = trips_enriched["line"].fillna(trips_enriched["route_id"])
-
-    line_to_route_ids = (
-        trips_enriched[["line", "route_id"]]
-        .dropna()
-        .drop_duplicates()
-        .groupby("line")["route_id"]
-        .apply(list)
-        .to_dict()
-    )
-
     for line, route_ids in line_to_route_ids.items():
-        line_summaries: list[dict] = []
-        for route_id in route_ids:
-            line_summaries.extend(
-                _route_direction_summaries(
-                    gtfs_smtuc=gtfs_smtuc,
-                    route_id=route_id,
-                    metro_stops=metro_stops,
-                    walk_5_min_m=walk_5_min_m,
-                )
-            )
-
-        if not line_summaries:
+        overlap_stats = _aggregate_overlap_for_line(
+            gtfs_smtuc=gtfs_smtuc,
+            route_ids=route_ids,
+            metro_stops=metro_stops,
+            walk_5_min_m=walk_5_min_m,
+        )
+        if overlap_stats is None:
             continue
-
-        total_ext_m = sum(s["total_ext_m"] for s in line_summaries)
-        overlap_ext_m = sum(s["overlap_ext_m"] for s in line_summaries)
-        overlap_stops = sum(s["overlap_stops"] for s in line_summaries)
-        total_stops = sum(s["total_stops"] for s in line_summaries)
-        directions_considered = len(line_summaries)
-        avg_freq_min = _line_avg_frequency_min(gtfs_smtuc, route_ids)
-
-        if total_ext_m <= 0:
-            continue
-
-        overlap_pct = (overlap_ext_m / total_ext_m) * 100.0
 
         out_rows.append(
             {
                 "line": str(line),
-                "avg_freq_min": avg_freq_min,
-                "overlap_extension_m": round(overlap_ext_m, 1),
-                "line_extension_m": round(total_ext_m, 1),
-                "overlap_pct": round(overlap_pct, 2),
-                "overlap_stops": int(overlap_stops),
-                "total_stops": int(total_stops),
-                "directions_considered": directions_considered,
+                "avg_freq_min": _line_avg_frequency_min(gtfs_smtuc, route_ids),
+                "overlap_extension_m": round(overlap_stats["overlap_extension_m"], 1),
+                "line_extension_m": round(overlap_stats["line_extension_m"], 1),
+                "overlap_pct": round(overlap_stats["overlap_pct"], 2),
+                "overlap_stops": overlap_stats["overlap_stops"],
+                "total_stops": overlap_stats["total_stops"],
+                "directions_considered": overlap_stats["directions_considered"],
             }
         )
 
-    if not out_rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(out_rows)
-    df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
-    return df.sort_values(["overlap_pct", "overlap_extension_m"], ascending=False).head(top_n).reset_index(drop=True)
+    return _finalize_line_rows(
+        out_rows=out_rows,
+        top_n=top_n,
+        sort_cols=["overlap_pct", "overlap_extension_m"],
+        ascending=[False, False],
+    )
 
 
 def line_low_overlap_near_stadium_top(
@@ -351,108 +438,55 @@ def line_low_overlap_near_stadium_top(
     metrobus_dataset: str = "metrobus",
     walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
-    gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
-    gtfs_metro = _load_gtfs_cached(metrobus_dataset)
-
-    walk_5_min_m = walk_speed_m_min * 5
-    metro_stops = gtfs_metro.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
-    if metro_stops.empty:
-        return pd.DataFrame()
-
-    routes_map_df = gtfs_smtuc.routes.copy()
-    if routes_map_df.empty or "route_id" not in routes_map_df.columns:
-        return pd.DataFrame()
-
-    name_col = "route_short_name" if "route_short_name" in routes_map_df.columns else "route_id"
-    routes_map_df = routes_map_df[["route_id", name_col]].copy()
-    routes_map_df["route_id"] = routes_map_df["route_id"].astype(str)
-    routes_map_df["line"] = routes_map_df[name_col].astype(str)
-
-    trips_enriched = gtfs_smtuc.trips.copy()
-    trips_enriched["route_id"] = trips_enriched["route_id"].astype(str)
-    trips_enriched = trips_enriched.merge(routes_map_df[["route_id", "line"]], on="route_id", how="left")
-    trips_enriched["line"] = trips_enriched["line"].fillna(trips_enriched["route_id"])
-
-    line_to_route_ids = (
-        trips_enriched[["line", "route_id"]]
-        .dropna()
-        .drop_duplicates()
-        .groupby("line")["route_id"]
-        .apply(list)
-        .to_dict()
+    gtfs_smtuc, metro_stops, line_to_route_ids, walk_5_min_m = _overlap_context(
+        smtuc_dataset=smtuc_dataset,
+        metrobus_dataset=metrobus_dataset,
+        walk_speed_m_min=walk_speed_m_min,
     )
+    if gtfs_smtuc is None:
+        return pd.DataFrame()
 
     out_rows: list[dict] = []
 
     for line, route_ids in line_to_route_ids.items():
-        overlap_summaries: list[dict] = []
-        radius_summaries: list[dict] = []
-        for route_id in route_ids:
-            overlap_summaries.extend(
-                _route_direction_summaries(
-                    gtfs_smtuc=gtfs_smtuc,
-                    route_id=route_id,
-                    metro_stops=metro_stops,
-                    walk_5_min_m=walk_5_min_m,
-                )
-            )
-            radius_summaries.extend(
-                _route_direction_radius_coverage_summaries(
-                    gtfs_smtuc=gtfs_smtuc,
-                    route_id=route_id,
-                    center_lat=stadium_lat,
-                    center_lon=stadium_lon,
-                    radius_m=radius_m,
-                )
-            )
-
-        if not overlap_summaries or not radius_summaries:
+        overlap_stats = _aggregate_overlap_for_line(
+            gtfs_smtuc=gtfs_smtuc,
+            route_ids=route_ids,
+            metro_stops=metro_stops,
+            walk_5_min_m=walk_5_min_m,
+        )
+        radius_stats = _aggregate_radius_for_line(
+            gtfs_smtuc=gtfs_smtuc,
+            route_ids=route_ids,
+            center_lat=stadium_lat,
+            center_lon=stadium_lon,
+            radius_m=radius_m,
+        )
+        if overlap_stats is None or radius_stats is None:
             continue
 
-        total_ext_m = sum(s["total_ext_m"] for s in overlap_summaries)
-        overlap_ext_m = sum(s["overlap_ext_m"] for s in overlap_summaries)
-        overlap_stops = sum(s["overlap_stops"] for s in overlap_summaries)
-        total_stops = sum(s["total_stops"] for s in overlap_summaries)
-        directions_considered = len(overlap_summaries)
-        avg_freq_min = _line_avg_frequency_min(gtfs_smtuc, route_ids)
-
-        radius_total_ext_m = sum(s["total_ext_m"] for s in radius_summaries)
-        radius_ext_m = sum(s["in_radius_ext_m"] for s in radius_summaries)
-
-        if total_ext_m <= 0 or radius_total_ext_m <= 0:
-            continue
-
-        overlap_pct = (overlap_ext_m / total_ext_m) * 100.0
-        radius_extension_pct = (radius_ext_m / radius_total_ext_m) * 100.0
-        if radius_extension_pct < min_radius_extension_pct:
+        if radius_stats["radius_extension_pct"] < min_radius_extension_pct:
             continue
 
         out_rows.append(
             {
                 "line": str(line),
-                "avg_freq_min": avg_freq_min,
-                "overlap_extension_m": round(overlap_ext_m, 1),
-                "line_extension_m": round(total_ext_m, 1),
-                "overlap_pct": round(overlap_pct, 2),
-                "overlap_stops": int(overlap_stops),
-                "total_stops": int(total_stops),
-                "directions_considered": directions_considered,
-                "radius_extension_m": round(radius_ext_m, 1),
-                "radius_extension_pct": round(radius_extension_pct, 2),
+                "avg_freq_min": _line_avg_frequency_min(gtfs_smtuc, route_ids),
+                "overlap_extension_m": round(overlap_stats["overlap_extension_m"], 1),
+                "line_extension_m": round(overlap_stats["line_extension_m"], 1),
+                "overlap_pct": round(overlap_stats["overlap_pct"], 2),
+                "overlap_stops": overlap_stats["overlap_stops"],
+                "total_stops": overlap_stats["total_stops"],
+                "directions_considered": overlap_stats["directions_considered"],
+                "radius_extension_m": round(radius_stats["radius_extension_m"], 1),
+                "radius_extension_pct": round(radius_stats["radius_extension_pct"], 2),
                 "radius_m": float(radius_m),
             }
         )
 
-    if not out_rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(out_rows)
-    df = df[pd.to_numeric(df["line"], errors="coerce") < 100]
-    return (
-        df.sort_values(
-            ["overlap_pct", "overlap_extension_m", "radius_extension_pct"],
-            ascending=[True, True, False],
-        )
-        .head(top_n)
-        .reset_index(drop=True)
+    return _finalize_line_rows(
+        out_rows=out_rows,
+        top_n=top_n,
+        sort_cols=["overlap_pct", "overlap_extension_m", "radius_extension_pct"],
+        ascending=[True, True, False],
     )

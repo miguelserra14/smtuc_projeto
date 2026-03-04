@@ -164,7 +164,7 @@ def test_top5_overlap() -> None:
         _print_table(_format_overlap_table(top5))
 
     assert isinstance(top5, pd.DataFrame)
-    assert len(top5) <= 5
+    assert len(top5) <= OVERLAP_TABLE_TOP_N
 
 
 @pytest.mark.integration
@@ -182,7 +182,7 @@ def test_bottom5_overlap() -> None:
         _print_table(_format_overlap_table(bottom5))
 
     assert isinstance(bottom5, pd.DataFrame)
-    assert len(bottom5) <= 5
+    assert len(bottom5) <= OVERLAP_TABLE_TOP_N
 
 
 @pytest.mark.integration
@@ -205,7 +205,7 @@ def test_bottom5_overlap_near_stadium() -> None:
         _print_table(_format_overlap_table(out, include_radius=True))
 
     assert isinstance(out, pd.DataFrame)
-    assert len(out) <= 5
+    assert len(out) <= OVERLAP_TABLE_TOP_N
     if not out.empty:
         assert (out["radius_extension_pct"] >= 50.0).all()
 
