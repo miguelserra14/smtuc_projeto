@@ -12,7 +12,6 @@ from smtuc_mvp.config import (
 )
 from smtuc_mvp.operations.operations_overlap_db import (
     build_line_metrics_db,
-    load_line_metrics_db,
 )
 
 
@@ -22,7 +21,11 @@ def line_overlap_top(
     top_n: int = OVERLAP_TABLE_TOP_N,
     walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
-    base = load_line_metrics_db()
+    base = build_line_metrics_db(
+        smtuc_dataset=smtuc_dataset,
+        metrobus_dataset=metrobus_dataset,
+        walk_speed_m_min=walk_speed_m_min,
+    )
     if base.empty:
         return pd.DataFrame()
 
@@ -42,7 +45,14 @@ def line_low_overlap_near_stadium_top(
     metrobus_dataset: str = "metrobus",
     walk_speed_m_min: float = WALK_SPEED_M_MIN,
 ) -> pd.DataFrame:
-    base = load_line_metrics_db()
+    base = build_line_metrics_db(
+        smtuc_dataset=smtuc_dataset,
+        metrobus_dataset=metrobus_dataset,
+        walk_speed_m_min=walk_speed_m_min,
+        stadium_lat=stadium_lat,
+        stadium_lon=stadium_lon,
+        radius_m=radius_m,
+    )
     if base.empty:
         return pd.DataFrame()
 

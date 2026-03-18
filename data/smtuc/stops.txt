@@ -322,9 +322,7 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 332,1332,Almas de Freire (Escola),40.1993,-8.440897,Almas de Freire (Escola)
 333,1333,Santa Clara (Centro de Saúde),40.202437,-8.443087,Santa Clara (Centro de Saúde)
 334,1334,Santa Clara (Vale do Rosal),40.199179,-8.44771,Santa Clara (Vale do Rosal)
-335,1335,Quinta da Portela (Caminho do Cabeço),40.18589,-8.408038,Quinta da Portela (Caminho do Cabeço)
-336,1336,Quinta da Portela (Centro),40.184834,-8.405465,Quinta da Portela (Centro)
-337,1337,Quinta da Portela (2),40.183396,-8.405269,Quinta da Portela (2)
+335,1335,Quinta da Portela (Caminho do Cabeço),40.186882,-8.409358,Quinta da Portela (Caminho do Cabeço)
 338,1338,Santa Clara (Junta de Freguesia),40.200356,-8.440673,Santa Clara (Junta de Freguesia)
 339,1339,Santa Clara (Junta de Freguesia),40.200838,-8.440812,Santa Clara (Junta de Freguesia)
 340,1340,Rua Augusto Matos (1),40.202159,-8.440113,Rua Augusto Matos (1)
@@ -475,9 +473,9 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 487,1491,Largo do Arnado (Av. Fernão de Magalhães),40.214158,-8.434536,Largo do Arnado (Av. Fernão de Magalhães)
 488,1492,Loja do Cidadão,40.210945,-8.432316,Loja do Cidadão
 490,1494,Palácio da Justiça,40.214809,-8.432226,Palácio da Justiça
-494,1499,Beira Rio ,40.207393,-8.430726,Beira Rio 
-495,1500,Beira Rio ,40.207569,-8.431001,Beira Rio 
-496,1501,Beira Rio ,40.207661,-8.43113,Beira Rio 
+494,1499,Portagem (Beira Rio),40.207393,-8.430726,Portagem (Beira Rio)
+495,1500,Portagem (Beira Rio),40.207569,-8.431001,Portagem (Beira Rio)
+496,1501,Portagem (Beira Rio),40.207661,-8.43113,Portagem (Beira Rio)
 497,1502,Rua Carlos Alberto Pinto de Abreu (2),40.200767,-8.435934,Rua Carlos Alberto Pinto de Abreu (2)
 498,1503,Rua Carlos Alberto Pinto de Abreu (1),40.199195,-8.435674,Rua Carlos Alberto Pinto de Abreu (1)
 499,1504,Mosteiro de Santa Clara-a-Nova,40.200511,-8.437457,Mosteiro de Santa Clara-a-Nova
@@ -488,12 +486,12 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 504,1509,Portagem,40.207579,-8.430285,Portagem
 505,1510,Portagem,40.207673,-8.430429,Portagem
 506,1511,Portagem,40.2079,-8.430791,Portagem
-509,1514,Parque,40.206514,-8.429024,Parque
+509,1514,Portagem (Parque Manuel Braga),40.206514,-8.429024,Portagem (Parque Manuel Braga)
 510,1515,Guarda Inglesa (Escola Silva Gaio),40.20799,-8.437972,Guarda Inglesa (Escola Silva Gaio)
 511,1516,Escola Secundária D. Duarte,40.199234,-8.432301,Escola Secundária D. Duarte
 513,1518,Santa Clara (Rua Feitoria dos Linhos),40.201418,-8.434406,Santa Clara (Rua Feitoria dos Linhos)
 514,1519,Mosteiro de Santa Clara-a-Velha,40.203737,-8.433264,Mosteiro de Santa Clara-a-Velha
-515,1521,Beira Rio,40.207706,-8.431193,Beira Rio
+515,1521,Portagem (Beira Rio),40.207706,-8.431193,Portagem (Beira Rio)
 516,1523,Convento de São Francisco,40.203095,-8.435512,Convento de São Francisco
 517,1524,Rua Coelho Rocha (2),40.206056,-8.438632,Rua Coelho Rocha (2)
 518,1525,Guarda Inglesa (Escola Silva Gaio),40.206746,-8.437618,Guarda Inglesa (Escola Silva Gaio)
@@ -590,7 +588,7 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 613,1623,Calouste Gulbenkian,40.214332,-8.414819,Calouste Gulbenkian
 616,1626,Rua Santa Teresa (Largo de Santana),40.206692,-8.416455,Rua Santa Teresa (Largo de Santana)
 617,1627,Rua Alexandre Herculano,40.207206,-8.419785,Rua Alexandre Herculano
-618,1628,Alexandre Herculano,40.207848,-8.419838,Alexandre Herculano
+618,1628,Castro Matoso,40.208034,-8.421506,Castro Matoso
 619,1629,Universidade de Coimbra,40.207865,-8.424318,Universidade de Coimbra
 620,1630,Arcos do Jardim / Jardim Botânico,40.206357,-8.420355,Arcos do Jardim / Jardim Botânico
 621,1631,Arcos do Jardim / Jardim Botânico,40.206091,-8.420081,Arcos do Jardim / Jardim Botânico
@@ -778,7 +776,7 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 813,1829,Rua Paulo Quintela (Vale das Flores),40.196588,-8.407961,Rua Paulo Quintela (Vale das Flores)
 814,1830,Quinta das Flores (Centro de Saúde),40.194378,-8.413212,Quinta das Flores (Centro de Saúde)
 815,1832,Universidade (Polo II),40.186149,-8.413003,Universidade (Polo II)
-816,1833,Rebolim,40.187092,-8.410752,Rebolim
+816,1833,Rebolim,40.18878,-8.409017,Rebolim
 817,1834,Pinhal de Marrocos,40.189991,-8.407194,Pinhal de Marrocos
 818,1835,Universidade (Polo II),40.186402,-8.413004,Universidade (Polo II)
 819,1836,Quinta da Cavada,40.175833,-8.407234,Quinta da Cavada
@@ -985,9 +983,8 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 1020,2037,Planalto de Santa Clara (Zona Comercial),40.20975,-8.444698,Planalto de Santa Clara (Zona Comercial)
 1021,2038,Planalto de Santa Clara (Zona Comercial),40.208966,-8.443805,Planalto de Santa Clara (Zona Comercial)
 1022,2039,Santa Apolónia (Centro),40.253676,-8.43546,Santa Apolónia (Centro)
-1023,2040,Portagem,40.207274,-8.429275,Portagem
+1023,2040,Portagem,40.209416,-8.429038,Portagem
 1024,2042,Instituto Português de Oncologia (IPO),40.216752,-8.409075,Instituto Português de Oncologia (IPO)
-1025,2043,Quinta da Portela (3),40.182954,-8.407097,Quinta da Portela (3)
 1026,2044,Carvalhais (Largo Poço do Mato),40.166037,-8.432033,Carvalhais (Largo Poço do Mato)
 1027,2045,Carvalhais (Largo Poço do Mato),40.165855,-8.432049,Carvalhais (Largo Poço do Mato)
 1028,2046,Casal de São João,40.164237,-8.426687,Casal de São João
@@ -1046,7 +1043,6 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 1081,2099,Golpe (Rua do Regatinho),40.246759,-8.368193,Golpe (Rua do Regatinho)
 1082,2100,Ceira (Centro),40.173765,-8.390881,Ceira (Centro)
 1083,2101,Polo II (Rua Abílio Fernandes),40.185406,-8.411568,Polo II (Rua Abílio Fernandes)
-1084,2102,Rebolim (Praia Fluvial),40.182887,-8.411268,Rebolim (Praia Fluvial)
 1085,2103,Taveiro (Parque Industrial) (1),40.198244,-8.512679,Taveiro (Parque Industrial) (1)
 1086,2104,Taveiro (Parque Industrial) (2),40.196303,-8.509321,Taveiro (Parque Industrial) (2)
 1087,2105,Hospital Pediátrico,40.222691,-8.414527,Hospital Pediátrico
@@ -1139,7 +1135,7 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 1198,2171,Anaguéis (Rua da Madroa) (2),40.138426,-8.393142,Anaguéis (Rua da Madroa) (2)
 1199,2174,Alcarraques (X),40.252522,-8.463,Alcarraques (X)
 1200,2176,Quinta da Portela (Igreja),40.186524,-8.403439,Quinta da Portela (Igreja)
-1201,2175,Quinta da Portela (Igreja),40.186462,-8.404163,Quinta da Portela (Igreja)
+1201,2175,Quinta da Portela (Igreja),40.186771,-8.402756,Quinta da Portela (Igreja)
 1203,2185,Antanhol (Casa Meada) (X),40.163608,-8.459914,Antanhol (Casa Meada) (X)
 1204,2184,Antanhol (Casa Meada) (X),40.163266,-8.460216,Antanhol (Casa Meada) (X)
 1205,2183,Antanhol (Casa Meada) (X),40.16324,-8.457549,Antanhol (Casa Meada) (X)
@@ -1512,9 +1508,13 @@ stop_id,stop_code,stop_name,stop_lat,stop_lon,stop_desc
 1603,9026,Cruz de Celas,40.213175,-8.412733,Cruz de Celas
 1605,2557,Brasfemes (M537),40.278266,-8.3907,Brasfemes (M537)
 1610,2559,Coselhas (Hospital da Luz),40.224891,-8.42179,Coselhas (Hospital da Luz)
-1611,9031,Sá da Bandeira,40.211522,-8.423328,Sá da Bandeira
 1619,2564,Vale Gemil (Rotunda do Almegue),40.214075,-8.446927,Vale Gemil (Rotunda do Almegue)
 1620,2562,Vale Gemil 2,40.210182,-8.447541,Vale Gemil 2
 1621,2561,Vale Gemil 1,40.211599,-8.447999,Vale Gemil 1
 1622,2563,Vale Gemil - centro,40.212205,-8.447113,Vale Gemil - centro
 1623,2560,Vale Gemil - centro,40.212331,-8.447091,Vale Gemil - centro
+1624,2566,Calçada de Santa Isabel,40.202384,-8.43605,Calçada de Santa Isabel
+1625,2565,Mosteiro Santa Clara,40.202284,-8.436651,Mosteiro Santa Clara
+1626,2569,Quinta da Portela (Caminho do Cabeço),40.187439,-8.409853,Quinta da Portela (Caminho do Cabeço)
+1627,2568,Quinta da Portela ( Rotunda),40.18576,-8.406687,Quinta da Portela ( Rotunda)
+1628,2567,Quinta da Portela ( Rotunda),40.185863,-8.406725,Quinta da Portela ( Rotunda)

@@ -351,6 +351,8 @@ def build_line_metrics_db(
             if meta_ok:
                 return cached.drop(columns=[c for c in cached.columns if c.startswith("__meta_")], errors="ignore")
 
+    _load_gtfs_cached.cache_clear()
+
     fresh = _compute_line_metrics(
         smtuc_dataset=smtuc_dataset,
         metrobus_dataset=metrobus_dataset,
@@ -375,16 +377,22 @@ def build_line_metrics_db(
     return fresh.drop(columns=[c for c in fresh.columns if c.startswith("__meta_")], errors="ignore")
 
 
-def load_line_metrics_db(db_path: str | None = None) -> pd.DataFrame:
-    csv_path = _resolve_db_path(db_path)
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Base central não encontrada: {csv_path}. "
-            "Gera primeiro com build_line_metrics_db(...)."
-        )
-
-    df = pd.read_csv(csv_path)
-    if df.empty:
-        return df
-
-    return df.drop(columns=[c for c in df.columns if c.startswith("__meta_")], errors="ignore")
+def load_line_metrics_db(
+    db_path: str | None = None,
+    smtuc_dataset: str = "smtuc",
+    metrobus_dataset: str = "metrobus",
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
+    stadium_lat: float = STADIUM_COORD[0],
+    stadium_lon: float = STADIUM_COORD[1],
+    radius_m: float = STADIUM_RADIUS_M,
+) -> pd.DataFrame:
+    return build_line_metrics_db(
+        smtuc_dataset=smtuc_dataset,
+        metrobus_dataset=metrobus_dataset,
+        walk_speed_m_min=walk_speed_m_min,
+        stadium_lat=stadium_lat,
+        stadium_lon=stadium_lon,
+        radius_m=radius_m,
+        db_path=db_path,
+        force_refresh=False,
+    )
