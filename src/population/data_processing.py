@@ -21,11 +21,7 @@ from population.operations_population import (
 
 if TYPE_CHECKING:
     import geopandas as gpd
-else:
-    try:
-        import geopandas as gpd
-    except Exception:  # pragma: no cover - optional dependency guard
-        gpd = None
+
 
 
 def _require_bgri_data() -> Path:
@@ -35,11 +31,6 @@ def _require_bgri_data() -> Path:
         pytest.skip(f"BGRI GPKG não encontrado: {gpkg}")
     return gpkg
 
-
-def _require_geo_stack() -> None:
-    """Require GeoPandas to be available and skip test if not."""
-    if gpd is None:
-        pytest.skip("geopandas não está disponível no ambiente")
 
 
 def load_and_prepare_bgri(gpkg_path: str, layer: str = "BGRI2021_0603") -> gpd.GeoDataFrame:

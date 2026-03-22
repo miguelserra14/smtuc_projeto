@@ -294,6 +294,8 @@ def _compute_line_metrics(
             "radius_extension_m": np.nan,
             "radius_extension_pct": np.nan,
             "radius_m": float(radius_m),
+            "temporal_overlaps_count": 0,
+            "temporal_overlaps_pct": 0.0,
         }
 
         if radius_summaries:
