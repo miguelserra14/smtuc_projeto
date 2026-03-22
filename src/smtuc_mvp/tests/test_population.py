@@ -51,20 +51,48 @@ def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
         "<head>\n"
         "  <meta charset=\"utf-8\" />\n"
         "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
+        "  <meta name=\"color-scheme\" content=\"light only\" />\n"
         f"  <title>{page_title}</title>\n"
         "  <script src=\"https://cdn.plot.ly/plotly-3.4.0.min.js\"></script>\n"
         "  <style>\n"
+        "    :root { color-scheme: light only; }\n"
         "    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }\n"
-        "    #plot { width: 100%; height: 100%; }\n"
+        "    #plot { width: 100%; height: 100%; isolation: isolate; }\n"
+        "    #plot, #plot * { forced-color-adjust: none !important; }\n"
         "  </style>\n"
         "</head>\n"
         "<body>\n"
         "  <div id=\"plot\"></div>\n"
         "  <script>\n"
+        "    function applyDarkModeGuard() {\n"
+        "      const plot = document.getElementById('plot');\n"
+        "      if (!plot) return;\n"
+        "      const htmlFilter = getComputedStyle(document.documentElement).filter;\n"
+        "      const bodyFilter = getComputedStyle(document.body).filter;\n"
+        "      const pageFilter = htmlFilter && htmlFilter !== 'none' ? htmlFilter : (bodyFilter && bodyFilter !== 'none' ? bodyFilter : 'none');\n"
+        "      plot.style.setProperty('background', '#ffffff', 'important');\n"
+        "      plot.style.setProperty('color-scheme', 'light', 'important');\n"
+        "      plot.style.setProperty('forced-color-adjust', 'none', 'important');\n"
+        "      if (pageFilter !== 'none') {\n"
+        "        plot.style.setProperty('filter', pageFilter, 'important');\n"
+        "      } else {\n"
+        "        plot.style.removeProperty('filter');\n"
+        "      }\n"
+        "    }\n"
+        "\n"
+        "    applyDarkModeGuard();\n"
         "    const figure = "
         f"{figure_json}"
         ";\n"
-        "    Plotly.newPlot('plot', figure.data, figure.layout, { responsive: true });\n"
+        "    Plotly.newPlot('plot', figure.data, figure.layout, { responsive: true }).then(() => {\n"
+        "      applyDarkModeGuard();\n"
+        "      setTimeout(applyDarkModeGuard, 100);\n"
+        "      setTimeout(applyDarkModeGuard, 500);\n"
+        "    });\n"
+        "\n"
+        "    const darkModeObserver = new MutationObserver(() => applyDarkModeGuard());\n"
+        "    darkModeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
+        "    darkModeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
         "  </script>\n"
         "</body>\n"
         "</html>\n"
@@ -241,6 +269,13 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     _write_readable_plotly_html(fig_map_2km, map_2km_html, "BGRI Coimbra — Choropleth 2km")
 
     scatter_df = gap_plot[gap_plot["N_INDIVIDUOS"] > 0].copy()
+    scatter_score_min = float(scatter_df["underservice_score"].min())
+    scatter_score_q95 = float(scatter_df["underservice_score"].quantile(0.95))
+    if scatter_score_q95 <= scatter_score_min:
+        scatter_score_q95 = float(scatter_df["underservice_score"].max())
+    if scatter_score_q95 <= scatter_score_min:
+        scatter_score_q95 = scatter_score_min + 1.0
+
     fig_scatter = px.scatter(
         scatter_df,
         x="supply_departures",
@@ -248,7 +283,8 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
         color="underservice_score",
         size="N_INDIVIDUOS",
         hover_name="BGRI2021",
-        color_continuous_scale="Reds",
+        color_continuous_scale="YlOrRd",
+        range_color=(scatter_score_min, scatter_score_q95),
         title=f"População vs Oferta por BGRI (dia {day_str})",
         labels={
             "supply_departures": "Oferta (n.º de passagens no dia)",
@@ -256,7 +292,35 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
             "underservice_score": "Índice de subserviço",
         },
     )
-    fig_scatter.update_layout(margin={"l": 30, "r": 30, "t": 50, "b": 30})
+    fig_scatter.update_traces(
+        marker={
+            "opacity": 0.9,
+            "line": {"color": "black", "width": 0.7},
+        },
+        selector={"mode": "markers"},
+    )
+    fig_scatter.update_layout(
+        margin={"l": 0, "r": 30, "t": 50, "b": 0},
+        plot_bgcolor="white",
+        xaxis={
+            "gridcolor": "black",
+            "showgrid": False,
+            "showline": False,
+            "zeroline": True,
+            "zerolinecolor": "black",
+            "zerolinewidth": 2,
+            "range": [0, None],
+        },
+        yaxis={
+            "gridcolor": "black",
+            "showgrid": False,
+            "showline": False,
+            "zeroline": True,
+            "zerolinecolor": "black",
+            "zerolinewidth": 2,
+            "range": [0, None],
+        },
+    )
 
     scatter_html = out_dir / "bgri_population_vs_supply_scatter.html"
     _write_readable_plotly_html(fig_scatter, scatter_html, "BGRI Coimbra — Scatter")
