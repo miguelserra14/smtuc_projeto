@@ -3,14 +3,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from smtuc_mvp.config import (
+from config import (
     OVERLAP_TABLE_TOP_N,
     STADIUM_COORD,
     STADIUM_MIN_EXTENSION_PCT,
     STADIUM_RADIUS_M,
     WALK_SPEED_M_MIN,
 )
-from smtuc_mvp.operations.operations_overlap_db import (
+from operations.operations_overlap_db import (
     build_line_metrics_db,
     load_line_metrics_db,
 )

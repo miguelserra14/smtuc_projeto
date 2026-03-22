@@ -7,8 +7,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-from smtuc_mvp.gtfs_processing.gtfs import load_gtfs
-from smtuc_mvp.gtfs_processing.gtfs_probe import _active_service_ids, _parse_day
+from gtfs_processing.gtfs import load_gtfs
+from gtfs_processing.gtfs_probe import _active_service_ids, _parse_day
 
 try:
     import geopandas as gpd
@@ -22,7 +22,7 @@ DEFAULT_OUTPUT_GAP_CSV = "outputs/bgri_transport_gap.csv"
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def _resolve_path(rel_or_abs: str) -> Path:

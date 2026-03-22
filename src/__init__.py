@@ -1,1 +1,1 @@
-"""Pacote raiz de código-fonte."""
+"""MVP para alocação eficiente de autocarros/metrobus com dados GTFS."""

@@ -6,9 +6,9 @@ from functools import lru_cache
 
 import pandas as pd
 
-from smtuc_mvp.config import WALK_SPEED_M_MIN
-from smtuc_mvp.gtfs_processing.gtfs import load_gtfs
-from smtuc_mvp.gtfs_processing.gtfs_probe import (
+from config import WALK_SPEED_M_MIN
+from gtfs_processing.gtfs import load_gtfs
+from gtfs_processing.gtfs_probe import (
     NearestStopResult,
     _active_service_ids,
     _haversine_m,

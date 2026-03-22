@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 import pytest
 
-from smtuc_mvp.config import STADIUM_COORD
-from smtuc_mvp.operations.operations_population import (
+from config import STADIUM_COORD
+from population.operations_population import (
     compute_bgri_population_transport_gap,
 )
 
@@ -25,7 +25,7 @@ else:
 
 def _project_root() -> Path:
     """Get the root directory of the project."""
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def _require_bgri_data() -> Path:

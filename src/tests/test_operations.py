@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from smtuc_mvp.config import (
+from config import (
     HOME_COORD,
     OVERLAP_SCAN_TOP_N,
     OVERLAP_TABLE_TOP_N,
@@ -16,7 +16,7 @@ from smtuc_mvp.config import (
     WORK_COORD,
 )
 
-from smtuc_mvp.operations.operations import (
+from operations.operations import (
     commute_options_for_datetime,
     compare_nearest_network,
     nearest_stop_for_dataset,
@@ -24,7 +24,7 @@ from smtuc_mvp.operations.operations import (
     suggest_current_commute_options,
     suggest_random_commute_options,
 )
-from smtuc_mvp.operations.operations_overlap import (
+from operations.operations_overlap import (
     line_low_overlap_near_stadium_top,
     line_overlap_top,
 )
@@ -75,7 +75,7 @@ def _format_overlap_table(df: pd.DataFrame, include_radius: bool = False) -> pd.
 
 
 def _dataset_dir(dataset: str) -> Path:
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[2]
     return root / "data" / dataset
 
 

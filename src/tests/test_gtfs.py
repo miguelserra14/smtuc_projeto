@@ -6,11 +6,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from smtuc_mvp.gtfs_processing.gtfs import extract_or_copy_gtfs, load_gtfs
+from gtfs_processing.gtfs import extract_or_copy_gtfs, load_gtfs
 DATASETS = ["smtuc", "metrobus"]
 
 def _dataset_dir(dataset: str) -> Path:
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[2]
     # tenta primeiro data/gtfs/<dataset>, depois data/<dataset>
     p1 = root / "data" / dataset
     p2 = root / "data" / dataset

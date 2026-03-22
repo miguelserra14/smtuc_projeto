@@ -1,4 +1,4 @@
-from smtuc_mvp.operations.operations import (
+from operations.operations import (
 	commute_options_for_datetime,
 	compare_nearest_network,
 	find_direct_options,
@@ -7,11 +7,11 @@ from smtuc_mvp.operations.operations import (
 	suggest_current_commute_options,
 	suggest_random_commute_options,
 )
-from smtuc_mvp.operations.operations_overlap import (
+from operations.operations_overlap import (
 	line_low_overlap_near_stadium_top,
 	line_overlap_top,
 )
-from smtuc_mvp.operations.operations_population import (
+from population.operations_population import (
 	compute_bgri_population_transport_gap,
 	top_bgri_underserved,
 )

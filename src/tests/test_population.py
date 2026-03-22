@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from smtuc_mvp.population.data_processing import (
+from population.data_processing import (
     _next_monday,
     _project_root,
     _require_bgri_data,
@@ -15,7 +15,7 @@ from smtuc_mvp.population.data_processing import (
     filter_zones_by_distance,
     get_population_near_stadium,
 )
-from smtuc_mvp.population.visualizations import (
+from population.visualizations import (
     _write_readable_plotly_html,
     create_2km_choropleth_map,
     create_choropleth_map,

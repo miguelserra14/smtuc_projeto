@@ -7,13 +7,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from smtuc_mvp.config import (
+from config import (
     LINE_METRICS_DB_PATH,
     STADIUM_COORD,
     STADIUM_RADIUS_M,
     WALK_SPEED_M_MIN,
 )
-from smtuc_mvp.gtfs_processing.gtfs import load_gtfs
+from gtfs_processing.gtfs import load_gtfs
 
 
 @lru_cache(maxsize=8)
@@ -196,7 +196,7 @@ def _line_to_route_ids(gtfs_smtuc) -> dict[str, list[str]]:
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def _resolve_db_path(path: str | None = None) -> Path:
