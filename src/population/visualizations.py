@@ -64,13 +64,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
-    """Write Plotly figure to readable HTML file with dark-mode guard."""
-    figure_json = fig.to_json()
-    html = _HTML_TEMPLATE.format(title=page_title, figure_json=figure_json)
-    html_path.write_text(html, encoding="utf-8")
-
-
 def _create_choropleth_generic(
     gdf: gpd.GeoDataFrame,
     title: str,

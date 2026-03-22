@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 import pytest
 
-from config import STADIUM_COORD
+from config import STADIUM_RADIUS_M, CATCHMENT_M
 from population._common import (
     create_stadium_point,
     ensure_crs,
@@ -66,7 +66,7 @@ def load_and_prepare_bgri(gpkg_path: str, layer: str = "BGRI2021_0603") -> gpd.G
 
 def compute_underserved_zones(
     day_str: str,
-    catchment_m: float = 500.0,
+    catchment_m: float = CATCHMENT_M,
     datasets: tuple = ("smtuc", "metrobus"),
     bgri_gpkg_path: Optional[str] = None,
     bgri_layer: str = "BGRI2021_0603",
@@ -125,7 +125,7 @@ def compute_underserved_zones(
 
 def filter_zones_by_distance(
     merged: gpd.GeoDataFrame,
-    distance_m: float = 2000.0,
+    distance_m: float = STADIUM_RADIUS_M,
 ) -> gpd.GeoDataFrame:
     """Filter BGRI zones by distance from stadium."""
     stadium_geo = create_stadium_point(merged.crs)
@@ -140,7 +140,7 @@ def filter_zones_by_distance(
 
 def get_population_near_stadium(
     bgri_gpkg_path: Optional[str] = None,
-    radius_m: float = 1000.0,
+    radius_m: float = STADIUM_RADIUS_M,
     layer: str = "BGRI2021_0603",
 ) -> tuple[float, float, float]:
     """

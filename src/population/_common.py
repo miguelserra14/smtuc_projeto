@@ -11,11 +11,6 @@ from config import STADIUM_COORD
 
 if TYPE_CHECKING:
     import geopandas as gpd
-else:
-    try:
-        import geopandas as gpd
-    except Exception:
-        gpd = None
 
 
 def project_root() -> Path:
