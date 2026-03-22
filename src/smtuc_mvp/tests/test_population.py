@@ -1,151 +1,39 @@
+"""Integration tests for BGRI population transport gap analysis and visualizations."""
+
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from smtuc_mvp.config import STADIUM_COORD
-from smtuc_mvp.operations.operations_population import (
-    compute_bgri_population_transport_gap,
+from smtuc_mvp.population.data_processing import (
+    _next_monday,
+    _project_root,
+    _require_bgri_data,
+    _require_geo_stack,
+    compute_underserved_zones,
+    filter_zones_by_distance,
+    get_population_near_stadium,
 )
-
-try:
-    import geopandas as gpd
-except Exception:  # pragma: no cover - optional dependency guard
-    gpd = None
-
-try:
-    import plotly.express as px
-except Exception:  # pragma: no cover - optional dependency guard
-    px = None
-
-
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
-def _require_bgri_data() -> Path:
-    gpkg = _project_root() / "data" / "dadospopulacaoBGRI" / "BGRI2021_0603.gpkg"
-    if not gpkg.exists():
-        pytest.skip(f"BGRI GPKG não encontrado: {gpkg}")
-    return gpkg
-
-
-def _require_geo_stack() -> None:
-    if gpd is None:
-        pytest.skip("geopandas não está disponível no ambiente")
-
-
-def _next_monday(from_day: date) -> date:
-    delta = (0 - from_day.weekday()) % 7
-    return from_day + pd.Timedelta(days=delta)
-
-
-def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
-    figure_json = fig.to_json()
-    html = (
-        "<!DOCTYPE html>\n"
-        "<html lang=\"pt\">\n"
-        "<head>\n"
-        "  <meta charset=\"utf-8\" />\n"
-        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
-        "  <meta name=\"color-scheme\" content=\"light only\" />\n"
-        f"  <title>{page_title}</title>\n"
-        "  <script src=\"https://cdn.plot.ly/plotly-3.4.0.min.js\"></script>\n"
-        "  <style>\n"
-        "    :root { color-scheme: light only; }\n"
-        "    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }\n"
-        "    #plot { width: 100%; height: 100%; isolation: isolate; }\n"
-        "    #plot, #plot * { forced-color-adjust: none !important; }\n"
-        "  </style>\n"
-        "</head>\n"
-        "<body>\n"
-        "  <div id=\"plot\"></div>\n"
-        "  <script>\n"
-        "    function applyDarkModeGuard() {\n"
-        "      const plot = document.getElementById('plot');\n"
-        "      if (!plot) return;\n"
-        "      const htmlFilter = getComputedStyle(document.documentElement).filter;\n"
-        "      const bodyFilter = getComputedStyle(document.body).filter;\n"
-        "      const pageFilter = htmlFilter && htmlFilter !== 'none' ? htmlFilter : (bodyFilter && bodyFilter !== 'none' ? bodyFilter : 'none');\n"
-        "      plot.style.setProperty('background', '#ffffff', 'important');\n"
-        "      plot.style.setProperty('color-scheme', 'light', 'important');\n"
-        "      plot.style.setProperty('forced-color-adjust', 'none', 'important');\n"
-        "      if (pageFilter !== 'none') {\n"
-        "        plot.style.setProperty('filter', pageFilter, 'important');\n"
-        "      } else {\n"
-        "        plot.style.removeProperty('filter');\n"
-        "      }\n"
-        "    }\n"
-        "\n"
-        "    applyDarkModeGuard();\n"
-        "    const figure = "
-        f"{figure_json}"
-        ";\n"
-        "    Plotly.newPlot('plot', figure.data, figure.layout, { responsive: true }).then(() => {\n"
-        "      applyDarkModeGuard();\n"
-        "      setTimeout(applyDarkModeGuard, 100);\n"
-        "      setTimeout(applyDarkModeGuard, 500);\n"
-        "    });\n"
-        "\n"
-        "    const darkModeObserver = new MutationObserver(() => applyDarkModeGuard());\n"
-        "    darkModeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
-        "    darkModeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
-        "  </script>\n"
-        "</body>\n"
-        "</html>\n"
-    )
-    html_path.write_text(html, encoding="utf-8")
+from smtuc_mvp.population.visualizations import (
+    _write_readable_plotly_html,
+    create_2km_choropleth_map,
+    create_choropleth_map,
+    create_scatter_plot,
+)
 
 
 @pytest.mark.integration
 def test_population_detail_near_stadium_1km() -> None:
+    """Test population distribution within 1km radius of stadium."""
     _require_geo_stack()
-    gpkg = _require_bgri_data()
 
-    bgri = gpd.read_file(gpkg, layer="BGRI2021_0603")
-    if bgri.empty:
-        pytest.skip("Layer BGRI vazio")
-
-    if "N_INDIVIDUOS" not in bgri.columns:
-        pytest.skip("Coluna N_INDIVIDUOS não encontrada")
-
-    bgri = bgri[["BGRI2021", "N_INDIVIDUOS", "geometry"]].copy()
-    bgri["N_INDIVIDUOS"] = pd.to_numeric(bgri["N_INDIVIDUOS"], errors="coerce").fillna(0.0)
-    bgri = bgri[~bgri.geometry.isna()].copy()
-
-    if bgri.crs is None:
-        bgri = bgri.set_crs("EPSG:3763")
-    elif str(bgri.crs).upper() != "EPSG:3763":
-        bgri = bgri.to_crs("EPSG:3763")
-
-    stadium_geo = gpd.GeoDataFrame(
-        {"name": ["stadium"]},
-        geometry=gpd.points_from_xy([STADIUM_COORD[1]], [STADIUM_COORD[0]]),
-        crs="EPSG:4326",
-    ).to_crs(bgri.crs)
-
-    radius_m = 1000.0
-    stadium_buffer = stadium_geo.geometry.iloc[0].buffer(radius_m)
-
-    intersects = bgri[bgri.geometry.intersects(stadium_buffer)].copy()
-    if intersects.empty:
-        pytest.skip("Nenhuma subsecção BGRI intersecta o raio de 1km do estádio")
-
-    intersects["orig_area"] = intersects.geometry.area
-    intersects["int_area"] = intersects.geometry.intersection(stadium_buffer).area
-    intersects["area_share"] = (intersects["int_area"] / intersects["orig_area"]).clip(lower=0.0, upper=1.0)
-    intersects["pop_in_1km"] = intersects["N_INDIVIDUOS"] * intersects["area_share"]
-
-    total_pop = float(bgri["N_INDIVIDUOS"].sum())
-    pop_1km = float(intersects["pop_in_1km"].sum())
-    pct = (pop_1km / total_pop * 100.0) if total_pop > 0 else 0.0
+    total_pop, pop_1km, pct = get_population_near_stadium(
+        bgri_gpkg_path=str(_require_bgri_data()),
+        radius_m=1000.0,
+    )
 
     print("\n=== População BGRI no raio de 1km do estádio (estimativa areal) ===")
-    print(f"Subsecções BGRI totais: {len(bgri)}")
-    print(f"Subsecções a intersectar 1km: {len(intersects)}")
     print(f"População total no concelho (BGRI): {total_pop:,.0f}")
     print(f"População estimada a <=1km do estádio: {pop_1km:,.0f} ({pct:.2f}%)")
 
@@ -155,13 +43,15 @@ def test_population_detail_near_stadium_1km() -> None:
 
 @pytest.mark.integration
 def test_bgri_underserved_zones_with_visualizations() -> None:
+    """Test underserved zones analysis and generate visualizations."""
     _require_geo_stack()
     gpkg = _require_bgri_data()
 
     monday = _next_monday(date.today())
     day_str = monday.strftime("%Y-%m-%d")
 
-    gap = compute_bgri_population_transport_gap(
+    # Compute underserved zones
+    merged = compute_underserved_zones(
         day_str=day_str,
         catchment_m=500.0,
         datasets=("smtuc", "metrobus"),
@@ -171,157 +61,36 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
         output_csv_path="outputs/bgri_transport_gap.csv",
     )
 
-    if gap.empty:
-        pytest.skip("Sem dados de gap para o dia selecionado")
-
     print("\n=== Top 10 zonas BGRI mais subservidas (população vs oferta) ===")
     print(
-        gap[["BGRI2021", "N_INDIVIDUOS", "supply_departures", "dep_per_1000_pop", "underservice_score"]]
+        merged[["BGRI2021", "N_INDIVIDUOS", "supply_departures", "dep_per_1000_pop", "underservice_score"]]
         .head(10)
         .to_string(index=False)
     )
 
-    if px is None:
-        pytest.skip("plotly não está disponível para gerar visualizações")
-
-    bgri = gpd.read_file(gpkg, layer="BGRI2021_0603")
-    bgri = bgri[["BGRI2021", "geometry"]].copy()
-    bgri["BGRI2021"] = bgri["BGRI2021"].astype(str)
-
-    gap_plot = gap.copy()
-    gap_plot["BGRI2021"] = gap_plot["BGRI2021"].astype(str)
-
-    merged = bgri.merge(gap_plot, on="BGRI2021", how="inner")
-    if merged.empty:
-        pytest.skip("Join BGRI + gap vazio")
-
-    if merged.crs is None:
-        merged = merged.set_crs("EPSG:3763")
-    elif str(merged.crs).upper() != "EPSG:3763":
-        merged = merged.to_crs("EPSG:3763")
-
     out_dir = _project_root() / "outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    color_scale = "Reds"
-    map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)"
+    # Get color range for choropleth
     score_min = float(merged["underservice_score"].min())
     score_max = float(merged["underservice_score"].max())
     if score_max <= score_min:
         score_max = score_min + 1.0
 
-    geojson = merged.to_crs("EPSG:4326").__geo_interface__
-
-    fig_map = px.choropleth(
-        merged,
-        geojson=geojson,
-        locations="BGRI2021",
-        featureidkey="properties.BGRI2021",
-        color="underservice_score",
-        hover_data={
-            "N_INDIVIDUOS": ":.0f",
-            "supply_departures": ":.0f",
-            "dep_per_1000_pop": ":.2f",
-            "BGRI2021": True,
-        },
-        title=map_title,
-        color_continuous_scale=color_scale,
-        range_color=(score_min, score_max),
-    )
-    fig_map.update_geos(fitbounds="locations", visible=False)
-    fig_map.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
-
+    # Generate main choropleth
+    fig_map = create_choropleth_map(merged, day_str, color_scale="Reds")
     map_html = out_dir / "bgri_underservice_choropleth.html"
     _write_readable_plotly_html(fig_map, map_html, "BGRI Coimbra — Choropleth")
 
-    stadium_geo = gpd.GeoDataFrame(
-        {"name": ["stadium"]},
-        geometry=gpd.points_from_xy([STADIUM_COORD[1]], [STADIUM_COORD[0]]),
-        crs="EPSG:4326",
-    ).to_crs(merged.crs)
-    stadium_point = stadium_geo.geometry.iloc[0]
-
-    merged_2km = merged[merged.geometry.distance(stadium_point) <= 2000.0].copy()
-    if merged_2km.empty:
-        pytest.skip("Sem zonas BGRI a <=2km do estádio para gerar choropleth")
-
-    geojson_2km = merged_2km.to_crs("EPSG:4326").__geo_interface__
-    fig_map_2km = px.choropleth(
-        merged_2km,
-        geojson=geojson_2km,
-        locations="BGRI2021",
-        featureidkey="properties.BGRI2021",
-        color="underservice_score",
-        hover_data={
-            "N_INDIVIDUOS": ":.0f",
-            "supply_departures": ":.0f",
-            "dep_per_1000_pop": ":.2f",
-            "BGRI2021": True,
-        },
-        title=map_title,
-        color_continuous_scale=color_scale,
-        range_color=(score_min, score_max),
-    )
-    fig_map_2km.update_geos(fitbounds="locations", visible=False)
-    fig_map_2km.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
-
+    # Generate 2km choropleth
+    merged_2km = filter_zones_by_distance(merged, distance_m=2000.0)
+    fig_map_2km = create_2km_choropleth_map(merged_2km, day_str, score_min, score_max, color_scale="Reds")
     map_2km_html = out_dir / "2kmstadium.html"
     _write_readable_plotly_html(fig_map_2km, map_2km_html, "BGRI Coimbra — Choropleth 2km")
 
-    scatter_df = gap_plot[gap_plot["N_INDIVIDUOS"] > 0].copy()
-    scatter_score_min = float(scatter_df["underservice_score"].min())
-    scatter_score_q95 = float(scatter_df["underservice_score"].quantile(0.95))
-    if scatter_score_q95 <= scatter_score_min:
-        scatter_score_q95 = float(scatter_df["underservice_score"].max())
-    if scatter_score_q95 <= scatter_score_min:
-        scatter_score_q95 = scatter_score_min + 1.0
-
-    fig_scatter = px.scatter(
-        scatter_df,
-        x="supply_departures",
-        y="N_INDIVIDUOS",
-        color="underservice_score",
-        size="N_INDIVIDUOS",
-        hover_name="BGRI2021",
-        color_continuous_scale="YlOrRd",
-        range_color=(scatter_score_min, scatter_score_q95),
-        title=f"População vs Oferta por BGRI (dia {day_str})",
-        labels={
-            "supply_departures": "Oferta (n.º de passagens no dia)",
-            "N_INDIVIDUOS": "População",
-            "underservice_score": "Índice de subserviço",
-        },
-    )
-    fig_scatter.update_traces(
-        marker={
-            "opacity": 0.9,
-            "line": {"color": "black", "width": 0.7},
-        },
-        selector={"mode": "markers"},
-    )
-    fig_scatter.update_layout(
-        margin={"l": 0, "r": 30, "t": 50, "b": 0},
-        plot_bgcolor="white",
-        xaxis={
-            "gridcolor": "black",
-            "showgrid": False,
-            "showline": False,
-            "zeroline": True,
-            "zerolinecolor": "black",
-            "zerolinewidth": 2,
-            "range": [0, None],
-        },
-        yaxis={
-            "gridcolor": "black",
-            "showgrid": False,
-            "showline": False,
-            "zeroline": True,
-            "zerolinecolor": "black",
-            "zerolinewidth": 2,
-            "range": [0, None],
-        },
-    )
-
+    # Generate scatter plot
+    scatter_df = merged[merged["N_INDIVIDUOS"] > 0].copy()
+    fig_scatter = create_scatter_plot(scatter_df, day_str)
     scatter_html = out_dir / "bgri_population_vs_supply_scatter.html"
     _write_readable_plotly_html(fig_scatter, scatter_html, "BGRI Coimbra — Scatter")
 
@@ -329,7 +98,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     print(f"Mapa (<=2km estádio) gerado: {map_2km_html}")
     print(f"Scatter gerado: {scatter_html}")
 
-    assert len(gap) > 0
+    assert len(merged) > 0
     assert map_html.exists()
     assert map_2km_html.exists()
     assert scatter_html.exists()
