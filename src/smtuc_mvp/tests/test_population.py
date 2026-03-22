@@ -43,6 +43,35 @@ def _next_monday(from_day: date) -> date:
     return from_day + pd.Timedelta(days=delta)
 
 
+def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
+    figure_json = fig.to_json()
+    html = (
+        "<!DOCTYPE html>\n"
+        "<html lang=\"pt\">\n"
+        "<head>\n"
+        "  <meta charset=\"utf-8\" />\n"
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
+        f"  <title>{page_title}</title>\n"
+        "  <script src=\"https://cdn.plot.ly/plotly-3.4.0.min.js\"></script>\n"
+        "  <style>\n"
+        "    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }\n"
+        "    #plot { width: 100%; height: 100%; }\n"
+        "  </style>\n"
+        "</head>\n"
+        "<body>\n"
+        "  <div id=\"plot\"></div>\n"
+        "  <script>\n"
+        "    const figure = "
+        f"{figure_json}"
+        ";\n"
+        "    Plotly.newPlot('plot', figure.data, figure.layout, { responsive: true });\n"
+        "  </script>\n"
+        "</body>\n"
+        "</html>\n"
+    )
+    html_path.write_text(html, encoding="utf-8")
+
+
 @pytest.mark.integration
 def test_population_detail_near_stadium_1km() -> None:
     _require_geo_stack()
@@ -175,7 +204,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     fig_map.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
 
     map_html = out_dir / "bgri_underservice_choropleth.html"
-    fig_map.write_html(map_html, include_plotlyjs="cdn")
+    _write_readable_plotly_html(fig_map, map_html, "BGRI Coimbra — Choropleth")
 
     stadium_geo = gpd.GeoDataFrame(
         {"name": ["stadium"]},
@@ -209,7 +238,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     fig_map_2km.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
 
     map_2km_html = out_dir / "2kmstadium.html"
-    fig_map_2km.write_html(map_2km_html, include_plotlyjs="cdn")
+    _write_readable_plotly_html(fig_map_2km, map_2km_html, "BGRI Coimbra — Choropleth 2km")
 
     scatter_df = gap_plot[gap_plot["N_INDIVIDUOS"] > 0].copy()
     fig_scatter = px.scatter(
@@ -230,7 +259,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     fig_scatter.update_layout(margin={"l": 30, "r": 30, "t": 50, "b": 30})
 
     scatter_html = out_dir / "bgri_population_vs_supply_scatter.html"
-    fig_scatter.write_html(scatter_html, include_plotlyjs="cdn")
+    _write_readable_plotly_html(fig_scatter, scatter_html, "BGRI Coimbra — Scatter")
 
     print(f"Mapa gerado: {map_html}")
     print(f"Mapa (<=2km estádio) gerado: {map_2km_html}")
