@@ -138,8 +138,20 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     if merged.empty:
         pytest.skip("Join BGRI + gap vazio")
 
+    if merged.crs is None:
+        merged = merged.set_crs("EPSG:3763")
+    elif str(merged.crs).upper() != "EPSG:3763":
+        merged = merged.to_crs("EPSG:3763")
+
     out_dir = _project_root() / "outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    color_scale = "Reds"
+    map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)"
+    score_min = float(merged["underservice_score"].min())
+    score_max = float(merged["underservice_score"].max())
+    if score_max <= score_min:
+        score_max = score_min + 1.0
 
     geojson = merged.to_crs("EPSG:4326").__geo_interface__
 
@@ -155,14 +167,49 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
             "dep_per_1000_pop": ":.2f",
             "BGRI2021": True,
         },
-        title=f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)",
-        color_continuous_scale="Reds",
+        title=map_title,
+        color_continuous_scale=color_scale,
+        range_color=(score_min, score_max),
     )
     fig_map.update_geos(fitbounds="locations", visible=False)
     fig_map.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
 
     map_html = out_dir / "bgri_underservice_choropleth.html"
     fig_map.write_html(map_html, include_plotlyjs="cdn")
+
+    stadium_geo = gpd.GeoDataFrame(
+        {"name": ["stadium"]},
+        geometry=gpd.points_from_xy([STADIUM_COORD[1]], [STADIUM_COORD[0]]),
+        crs="EPSG:4326",
+    ).to_crs(merged.crs)
+    stadium_point = stadium_geo.geometry.iloc[0]
+
+    merged_2km = merged[merged.geometry.distance(stadium_point) <= 2000.0].copy()
+    if merged_2km.empty:
+        pytest.skip("Sem zonas BGRI a <=2km do estádio para gerar choropleth")
+
+    geojson_2km = merged_2km.to_crs("EPSG:4326").__geo_interface__
+    fig_map_2km = px.choropleth(
+        merged_2km,
+        geojson=geojson_2km,
+        locations="BGRI2021",
+        featureidkey="properties.BGRI2021",
+        color="underservice_score",
+        hover_data={
+            "N_INDIVIDUOS": ":.0f",
+            "supply_departures": ":.0f",
+            "dep_per_1000_pop": ":.2f",
+            "BGRI2021": True,
+        },
+        title=map_title,
+        color_continuous_scale=color_scale,
+        range_color=(score_min, score_max),
+    )
+    fig_map_2km.update_geos(fitbounds="locations", visible=False)
+    fig_map_2km.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
+
+    map_2km_html = out_dir / "2kmstadium.html"
+    fig_map_2km.write_html(map_2km_html, include_plotlyjs="cdn")
 
     scatter_df = gap_plot[gap_plot["N_INDIVIDUOS"] > 0].copy()
     fig_scatter = px.scatter(
@@ -186,8 +233,10 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     fig_scatter.write_html(scatter_html, include_plotlyjs="cdn")
 
     print(f"Mapa gerado: {map_html}")
+    print(f"Mapa (<=2km estádio) gerado: {map_2km_html}")
     print(f"Scatter gerado: {scatter_html}")
 
     assert len(gap) > 0
     assert map_html.exists()
+    assert map_2km_html.exists()
     assert scatter_html.exists()

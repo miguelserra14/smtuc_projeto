@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 outputs/
+!outputs/
+outputs/*
+!outputs/*.html
+!outputs/*.csv
