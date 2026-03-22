@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
-from typing import Iterable
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from gtfs_processing.gtfs import load_gtfs
 from gtfs_processing.gtfs_probe import _active_service_ids, _parse_day
+from population._common import (
+    ensure_crs,
+    infer_bgri_id_col,
+    load_bgri_file,
+    resolve_path,
+)
 
 try:
     import geopandas as gpd
@@ -21,32 +26,11 @@ DEFAULT_BGRI_LAYER = "BGRI2021_0603"
 DEFAULT_OUTPUT_GAP_CSV = "outputs/bgri_transport_gap.csv"
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _resolve_path(rel_or_abs: str) -> Path:
-    p = Path(rel_or_abs)
-    if p.is_absolute():
-        return p
-    return (_project_root() / p).resolve()
-
-
 def _require_geopandas() -> None:
     if gpd is None:
         raise ImportError(
             "geopandas não está instalado. Instala com: pip install geopandas"
         )
-
-
-def _infer_bgri_id_col(columns: Iterable[str]) -> str:
-    cols = list(columns)
-    if "BGRI2021" in cols:
-        return "BGRI2021"
-    for c in cols:
-        if "BGRI" in c.upper():
-            return c
-    raise ValueError("Não foi possível inferir a coluna identificadora BGRI.")
 
 
 def _departures_per_stop_for_day(dataset: str, day: date) -> pd.DataFrame:
@@ -80,32 +64,30 @@ def _departures_per_stop_for_day(dataset: str, day: date) -> pd.DataFrame:
 def compute_bgri_population_transport_gap(
     day_str: str,
     catchment_m: float = 500.0,
-    datasets: tuple[str, ...] = ("smtuc", "metrobus"),
+    datasets: Tuple[str, ...] = ("smtuc", "metrobus"),
     bgri_gpkg_path: str = DEFAULT_BGRI_GPKG_PATH,
     bgri_layer: str = DEFAULT_BGRI_LAYER,
     population_col: str = "N_INDIVIDUOS",
-    output_csv_path: str | None = DEFAULT_OUTPUT_GAP_CSV,
+    output_csv_path: Optional[str] = DEFAULT_OUTPUT_GAP_CSV,
 ) -> pd.DataFrame:
     _require_geopandas()
 
     d = _parse_day(day_str)
-    gpkg = _resolve_path(bgri_gpkg_path)
+    gpkg = resolve_path(bgri_gpkg_path)
     if not gpkg.exists():
         raise FileNotFoundError(f"Ficheiro BGRI não encontrado: {gpkg}")
 
-    bgri = gpd.read_file(gpkg, layer=bgri_layer)
+    bgri = load_bgri_file(str(gpkg), bgri_layer)
     if bgri.empty:
         return pd.DataFrame()
 
-    bgri_id_col = _infer_bgri_id_col(bgri.columns)
+    bgri_id_col = infer_bgri_id_col(bgri.columns)
     if population_col not in bgri.columns:
         raise ValueError(f"Coluna de população não encontrada: {population_col}")
 
     bgri = bgri[[bgri_id_col, population_col, "geometry"]].copy()
     bgri[population_col] = pd.to_numeric(bgri[population_col], errors="coerce").fillna(0.0)
-    bgri = bgri[~bgri.geometry.isna()].copy()
-    if bgri.crs is None:
-        bgri = bgri.set_crs("EPSG:3763")
+    bgri = ensure_crs(bgri, "EPSG:3763")
 
     dep_frames: list[pd.DataFrame] = []
     for dataset in datasets:
@@ -116,7 +98,7 @@ def compute_bgri_population_transport_gap(
     if not dep_frames:
         out = pd.DataFrame(columns=[bgri_id_col, population_col, "supply_departures", "dep_per_1000_pop", "pop_per_departure", "underservice_score"])
         if output_csv_path:
-            out_path = _resolve_path(output_csv_path)
+            out_path = resolve_path(output_csv_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out.to_csv(out_path, index=False)
         return out
@@ -167,7 +149,7 @@ def compute_bgri_population_transport_gap(
     out = out.sort_values(["underservice_score", population_col], ascending=[False, False]).reset_index(drop=True)
 
     if output_csv_path:
-        out_path = _resolve_path(output_csv_path)
+        out_path = resolve_path(output_csv_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out.to_csv(out_path, index=False)
 
@@ -178,11 +160,11 @@ def top_bgri_underserved(
     day_str: str,
     top_n: int = 20,
     catchment_m: float = 500.0,
-    datasets: tuple[str, ...] = ("smtuc", "metrobus"),
+    datasets: Tuple[str, ...] = ("smtuc", "metrobus"),
     bgri_gpkg_path: str = DEFAULT_BGRI_GPKG_PATH,
     bgri_layer: str = DEFAULT_BGRI_LAYER,
     population_col: str = "N_INDIVIDUOS",
-    output_csv_path: str | None = DEFAULT_OUTPUT_GAP_CSV,
+    output_csv_path: Optional[str] = DEFAULT_OUTPUT_GAP_CSV,
 ) -> pd.DataFrame:
     out = compute_bgri_population_transport_gap(
         day_str=day_str,

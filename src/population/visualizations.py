@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional, Tuple, Dict
 
 import geopandas as gpd
 
@@ -12,69 +13,121 @@ except Exception:  # pragma: no cover - optional dependency guard
     px = None
 
 
-def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
-    """
-    Write Plotly figure to readable HTML file with dark-mode guard.
+_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light only" />
+  <title>{title}</title>
+  <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+  <style>
+    :root {{ color-scheme: light only; }}
+    html, body {{ width: 100%; height: 100%; margin: 0; padding: 0; }}
+    #plot {{ width: 100%; height: 100%; isolation: isolate; }}
+    #plot, #plot * {{ forced-color-adjust: none !important; }}
+  </style>
+</head>
+<body>
+  <div id="plot"></div>
+  <script>
+    function applyDarkModeGuard() {{
+      const plot = document.getElementById('plot');
+      if (!plot) return;
+      const htmlFilter = getComputedStyle(document.documentElement).filter;
+      const bodyFilter = getComputedStyle(document.body).filter;
+      const pageFilter = htmlFilter && htmlFilter !== 'none' ? htmlFilter : (bodyFilter && bodyFilter !== 'none' ? bodyFilter : 'none');
+      plot.style.setProperty('background', '#ffffff', 'important');
+      plot.style.setProperty('color-scheme', 'light', 'important');
+      plot.style.setProperty('forced-color-adjust', 'none', 'important');
+      if (pageFilter !== 'none') {{
+        plot.style.setProperty('filter', pageFilter, 'important');
+      }} else {{
+        plot.style.removeProperty('filter');
+      }}
+    }}
 
-    Args:
-        fig: Plotly figure object
-        html_path: Path to write HTML file
-        page_title: Title for HTML page
-    """
+    applyDarkModeGuard();
+    const figure = {figure_json};
+    Plotly.newPlot('plot', figure.data, figure.layout, {{ responsive: true }}).then(() => {{
+      applyDarkModeGuard();
+      setTimeout(applyDarkModeGuard, 100);
+      setTimeout(applyDarkModeGuard, 500);
+    }});
+
+    const darkModeObserver = new MutationObserver(() => applyDarkModeGuard());
+    darkModeObserver.observe(document.documentElement, {{ attributes: true, attributeFilter: ['class', 'style', 'data-theme'] }});
+    darkModeObserver.observe(document.body, {{ attributes: true, attributeFilter: ['class', 'style', 'data-theme'] }});
+  </script>
+</body>
+</html>
+"""
+
+
+def _write_readable_plotly_html(fig, html_path: Path, page_title: str) -> None:
+    """Write Plotly figure to readable HTML file with dark-mode guard."""
     figure_json = fig.to_json()
-    html = (
-        "<!DOCTYPE html>\n"
-        "<html lang=\"pt\">\n"
-        "<head>\n"
-        "  <meta charset=\"utf-8\" />\n"
-        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
-        "  <meta name=\"color-scheme\" content=\"light only\" />\n"
-        f"  <title>{page_title}</title>\n"
-        "  <script src=\"https://cdn.plot.ly/plotly-3.4.0.min.js\"></script>\n"
-        "  <style>\n"
-        "    :root { color-scheme: light only; }\n"
-        "    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }\n"
-        "    #plot { width: 100%; height: 100%; isolation: isolate; }\n"
-        "    #plot, #plot * { forced-color-adjust: none !important; }\n"
-        "  </style>\n"
-        "</head>\n"
-        "<body>\n"
-        "  <div id=\"plot\"></div>\n"
-        "  <script>\n"
-        "    function applyDarkModeGuard() {\n"
-        "      const plot = document.getElementById('plot');\n"
-        "      if (!plot) return;\n"
-        "      const htmlFilter = getComputedStyle(document.documentElement).filter;\n"
-        "      const bodyFilter = getComputedStyle(document.body).filter;\n"
-        "      const pageFilter = htmlFilter && htmlFilter !== 'none' ? htmlFilter : (bodyFilter && bodyFilter !== 'none' ? bodyFilter : 'none');\n"
-        "      plot.style.setProperty('background', '#ffffff', 'important');\n"
-        "      plot.style.setProperty('color-scheme', 'light', 'important');\n"
-        "      plot.style.setProperty('forced-color-adjust', 'none', 'important');\n"
-        "      if (pageFilter !== 'none') {\n"
-        "        plot.style.setProperty('filter', pageFilter, 'important');\n"
-        "      } else {\n"
-        "        plot.style.removeProperty('filter');\n"
-        "      }\n"
-        "    }\n"
-        "\n"
-        "    applyDarkModeGuard();\n"
-        "    const figure = "
-        f"{figure_json}"
-        ";\n"
-        "    Plotly.newPlot('plot', figure.data, figure.layout, { responsive: true }).then(() => {\n"
-        "      applyDarkModeGuard();\n"
-        "      setTimeout(applyDarkModeGuard, 100);\n"
-        "      setTimeout(applyDarkModeGuard, 500);\n"
-        "    });\n"
-        "\n"
-        "    const darkModeObserver = new MutationObserver(() => applyDarkModeGuard());\n"
-        "    darkModeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
-        "    darkModeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });\n"
-        "  </script>\n"
-        "</body>\n"
-        "</html>\n"
-    )
+    html = _HTML_TEMPLATE.format(title=page_title, figure_json=figure_json)
     html_path.write_text(html, encoding="utf-8")
+
+
+def _create_choropleth_generic(
+    gdf: gpd.GeoDataFrame,
+    title: str,
+    color_scale: str = "Reds",
+    color_col: str = "underservice_score",
+    range_color: Optional[Tuple[float, float]] = None,
+    hover_data: Optional[Dict] = None,
+) -> object:
+    """
+    Create generic choropleth map.
+    
+    Args:
+        gdf: GeoDataFrame to visualize
+        title: Map title
+        color_scale: Plotly color scale name
+        color_col: Column to use for coloring
+        range_color: Tuple of (min, max) for color range
+        hover_data: Dictionary of hover data columns
+    
+    Returns:
+        Plotly figure object
+    """
+    if px is None:
+        raise ImportError("plotly não está disponível para gerar visualizações")
+    
+    if not hover_data:
+        hover_data = {
+            "N_INDIVIDUOS": ":.0f",
+            "supply_departures": ":.0f",
+            "dep_per_1000_pop": ":.2f",
+            "BGRI2021": True,
+        }
+    
+    if range_color is None:
+        score_min = float(gdf[color_col].min())
+        score_max = float(gdf[color_col].max())
+        if score_max <= score_min:
+            score_max = score_min + 1.0
+        range_color = (score_min, score_max)
+    
+    geojson = gdf.to_crs("EPSG:4326").__geo_interface__
+    
+    fig = px.choropleth(
+        gdf,
+        geojson=geojson,
+        locations="BGRI2021",
+        featureidkey="properties.BGRI2021",
+        color=color_col,
+        hover_data=hover_data,
+        title=title,
+        color_continuous_scale=color_scale,
+        range_color=range_color,
+    )
+    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
+    
+    return fig
 
 
 def create_choropleth_map(
@@ -93,37 +146,8 @@ def create_choropleth_map(
     Returns:
         Plotly figure object
     """
-    if px is None:
-        raise ImportError("plotly não está disponível para gerar visualizações")
-
     map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)"
-    score_min = float(merged["underservice_score"].min())
-    score_max = float(merged["underservice_score"].max())
-    if score_max <= score_min:
-        score_max = score_min + 1.0
-
-    geojson = merged.to_crs("EPSG:4326").__geo_interface__
-
-    fig_map = px.choropleth(
-        merged,
-        geojson=geojson,
-        locations="BGRI2021",
-        featureidkey="properties.BGRI2021",
-        color="underservice_score",
-        hover_data={
-            "N_INDIVIDUOS": ":.0f",
-            "supply_departures": ":.0f",
-            "dep_per_1000_pop": ":.2f",
-            "BGRI2021": True,
-        },
-        title=map_title,
-        color_continuous_scale=color_scale,
-        range_color=(score_min, score_max),
-    )
-    fig_map.update_geos(fitbounds="locations", visible=False)
-    fig_map.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
-
-    return fig_map
+    return _create_choropleth_generic(merged, map_title, color_scale)
 
 
 def create_2km_choropleth_map(
@@ -146,32 +170,13 @@ def create_2km_choropleth_map(
     Returns:
         Plotly figure object
     """
-    if px is None:
-        raise ImportError("plotly não está disponível para gerar visualizações")
-
     map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)"
-    geojson_2km = merged_2km.to_crs("EPSG:4326").__geo_interface__
-
-    fig_map_2km = px.choropleth(
+    return _create_choropleth_generic(
         merged_2km,
-        geojson=geojson_2km,
-        locations="BGRI2021",
-        featureidkey="properties.BGRI2021",
-        color="underservice_score",
-        hover_data={
-            "N_INDIVIDUOS": ":.0f",
-            "supply_departures": ":.0f",
-            "dep_per_1000_pop": ":.2f",
-            "BGRI2021": True,
-        },
-        title=map_title,
-        color_continuous_scale=color_scale,
+        map_title,
+        color_scale,
         range_color=(score_min, score_max),
     )
-    fig_map_2km.update_geos(fitbounds="locations", visible=False)
-    fig_map_2km.update_layout(margin={"l": 0, "r": 0, "t": 50, "b": 0})
-
-    return fig_map_2km
 
 
 def create_scatter_plot(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -10,6 +9,12 @@ import pandas as pd
 import pytest
 
 from config import STADIUM_COORD
+from population._common import (
+    create_stadium_point,
+    ensure_crs,
+    load_bgri_file,
+    project_root,
+)
 from population.operations_population import (
     compute_bgri_population_transport_gap,
 )
@@ -23,14 +28,9 @@ else:
         gpd = None
 
 
-def _project_root() -> Path:
-    """Get the root directory of the project."""
-    return Path(__file__).resolve().parents[2]
-
-
 def _require_bgri_data() -> Path:
     """Require BGRI GeoPackage file and skip test if not found."""
-    gpkg = _project_root() / "data" / "dadospopulacaoBGRI" / "BGRI2021_0603.gpkg"
+    gpkg = project_root() / "data" / "dadospopulacaoBGRI" / "BGRI2021_0603.gpkg"
     if not gpkg.exists():
         pytest.skip(f"BGRI GPKG não encontrado: {gpkg}")
     return gpkg
@@ -40,12 +40,6 @@ def _require_geo_stack() -> None:
     """Require GeoPandas to be available and skip test if not."""
     if gpd is None:
         pytest.skip("geopandas não está disponível no ambiente")
-
-
-def _next_monday(from_day: date) -> date:
-    """Get the next Monday from a given date."""
-    delta = (0 - from_day.weekday()) % 7
-    return from_day + pd.Timedelta(days=delta)
 
 
 def load_and_prepare_bgri(gpkg_path: str, layer: str = "BGRI2021_0603") -> gpd.GeoDataFrame:
@@ -59,22 +53,14 @@ def load_and_prepare_bgri(gpkg_path: str, layer: str = "BGRI2021_0603") -> gpd.G
     Returns:
         Prepared GeoDataFrame with BGRI2021 and geometry columns
     """
-    bgri = gpd.read_file(gpkg_path, layer=layer)
-    if bgri.empty:
-        raise ValueError("Layer BGRI vazio")
-
+    bgri = load_bgri_file(gpkg_path, layer)
+    
     if "N_INDIVIDUOS" not in bgri.columns:
         raise ValueError("Coluna N_INDIVIDUOS não encontrada")
 
     bgri = bgri[["BGRI2021", "N_INDIVIDUOS", "geometry"]].copy()
     bgri["N_INDIVIDUOS"] = pd.to_numeric(bgri["N_INDIVIDUOS"], errors="coerce").fillna(0.0)
-    bgri = bgri[~bgri.geometry.isna()].copy()
-
-    if bgri.crs is None:
-        bgri = bgri.set_crs("EPSG:3763")
-    elif str(bgri.crs).upper() != "EPSG:3763":
-        bgri = bgri.to_crs("EPSG:3763")
-
+    
     return bgri
 
 
@@ -141,11 +127,8 @@ def filter_zones_by_distance(
     merged: gpd.GeoDataFrame,
     distance_m: float = 2000.0,
 ) -> gpd.GeoDataFrame:
-    stadium_geo = gpd.GeoDataFrame(
-        {"name": ["stadium"]},
-        geometry=gpd.points_from_xy([STADIUM_COORD[1]], [STADIUM_COORD[0]]),
-        crs="EPSG:4326",
-    ).to_crs(merged.crs)
+    """Filter BGRI zones by distance from stadium."""
+    stadium_geo = create_stadium_point(merged.crs)
     stadium_point = stadium_geo.geometry.iloc[0]
 
     filtered = merged[merged.geometry.distance(stadium_point) <= distance_m].copy()
@@ -175,16 +158,10 @@ def get_population_near_stadium(
         bgri_gpkg_path = str(_require_bgri_data())
 
     bgri = load_and_prepare_bgri(bgri_gpkg_path, layer)
-
-    stadium_geo = gpd.GeoDataFrame(
-        {"name": ["stadium"]},
-        geometry=gpd.points_from_xy([STADIUM_COORD[1]], [STADIUM_COORD[0]]),
-        crs="EPSG:4326",
-    ).to_crs(bgri.crs)
-
+    stadium_geo = create_stadium_point(bgri.crs)
     stadium_buffer = stadium_geo.geometry.iloc[0].buffer(radius_m)
+    
     intersects = bgri[bgri.geometry.intersects(stadium_buffer)].copy()
-
     if intersects.empty:
         raise ValueError(f"Nenhuma subsecção BGRI intersecta o raio de {radius_m}m do estádio")
 
