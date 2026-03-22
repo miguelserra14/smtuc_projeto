@@ -11,6 +11,10 @@ from smtuc_mvp.operations.operations_overlap import (
 	line_low_overlap_near_stadium_top,
 	line_overlap_top,
 )
+from smtuc_mvp.operations.operations_population import (
+	compute_bgri_population_transport_gap,
+	top_bgri_underserved,
+)
 
 __all__ = [
 	"find_direct_options",
@@ -22,4 +26,6 @@ __all__ = [
 	"commute_options_for_datetime",
 	"line_overlap_top",
 	"line_low_overlap_near_stadium_top",
+	"compute_bgri_population_transport_gap",
+	"top_bgri_underserved",
 ]
