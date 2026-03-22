@@ -12,7 +12,14 @@ from smtuc_mvp.config import (
 )
 from smtuc_mvp.operations.operations_overlap_db import (
     build_line_metrics_db,
+    load_line_metrics_db,
 )
+
+
+def _filter_numeric_bus_lines(df: pd.DataFrame) -> pd.DataFrame:
+    if "line" not in df.columns:
+        return df
+    return df[pd.to_numeric(df["line"], errors="coerce") < 100]
 
 
 def line_overlap_top(
@@ -29,8 +36,7 @@ def line_overlap_top(
     if base.empty:
         return pd.DataFrame()
 
-    if "line" in base.columns:
-        base = base[pd.to_numeric(base["line"], errors="coerce") < 100]
+    base = _filter_numeric_bus_lines(base)
 
     return base.sort_values(["overlap_pct", "overlap_extension_m"], ascending=False).head(top_n).reset_index(drop=True)
 
@@ -56,8 +62,7 @@ def line_low_overlap_near_stadium_top(
     if base.empty:
         return pd.DataFrame()
 
-    if "line" in base.columns:
-        base = base[pd.to_numeric(base["line"], errors="coerce") < 100]
+    base = _filter_numeric_bus_lines(base)
 
     if "radius_m" in base.columns:
         base = base[np.isclose(base["radius_m"].astype(float), float(radius_m), atol=1e-6)]
@@ -74,11 +79,3 @@ def line_low_overlap_near_stadium_top(
         .head(top_n)
         .reset_index(drop=True)
     )
-
-
-__all__ = [
-    "build_line_metrics_db",
-    "load_line_metrics_db",
-    "line_overlap_top",
-    "line_low_overlap_near_stadium_top",
-]

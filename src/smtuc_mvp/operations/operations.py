@@ -161,7 +161,7 @@ def _collect_commute_options(
             df["walk_work_min"] = (df["walk_work_m"] / WALK_SPEED_M_MIN).round(1)
             df["total_min_est"] = (df["duration_min"] + df["walk_home_min"] + df["walk_work_min"]).round(1)
             rows.append(df)
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             continue
 
     return rows

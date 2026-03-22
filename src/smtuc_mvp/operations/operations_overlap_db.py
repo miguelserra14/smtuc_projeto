@@ -81,12 +81,10 @@ def _representative_route_stops_for_subset(gtfs, route_trips: pd.DataFrame) -> p
     return best[["stop_id", "stop_sequence", "stop_lat", "stop_lon"]].drop_duplicates(subset=["stop_sequence"])
 
 
-def _route_direction_summaries(
+def _iter_route_direction_stop_arrays(
     gtfs_smtuc,
     route_id: str,
-    metro_stops: pd.DataFrame,
-    walk_5_min_m: float,
-) -> list[dict]:
+) -> list[tuple[np.ndarray, np.ndarray, int]]:
     route_trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str) == str(route_id)].copy()
     if route_trips.empty:
         return []
@@ -96,10 +94,7 @@ def _route_direction_summaries(
     else:
         direction_values = ["na"]
 
-    metro_lat = metro_stops["stop_lat"].astype(float).to_numpy()
-    metro_lon = metro_stops["stop_lon"].astype(float).to_numpy()
-    summaries: list[dict] = []
-
+    directions: list[tuple[np.ndarray, np.ndarray, int]] = []
     for direction in direction_values:
         subset = route_trips if direction == "na" else route_trips[route_trips["direction_id"].astype(str) == direction]
 
@@ -110,6 +105,22 @@ def _route_direction_summaries(
 
         route_lat = route_stops["stop_lat"].astype(float).to_numpy()
         route_lon = route_stops["stop_lon"].astype(float).to_numpy()
+        directions.append((route_lat, route_lon, int(len(route_stops))))
+
+    return directions
+
+
+def _route_direction_summaries(
+    gtfs_smtuc,
+    route_id: str,
+    metro_stops: pd.DataFrame,
+    walk_5_min_m: float,
+) -> list[dict]:
+    metro_lat = metro_stops["stop_lat"].astype(float).to_numpy()
+    metro_lon = metro_stops["stop_lon"].astype(float).to_numpy()
+    summaries: list[dict] = []
+
+    for route_lat, route_lon, total_stops in _iter_route_direction_stop_arrays(gtfs_smtuc, route_id):
 
         min_dist = _min_distance_to_points_m(route_lat, route_lon, metro_lat, metro_lon)
         is_overlap = min_dist <= walk_5_min_m
@@ -128,7 +139,7 @@ def _route_direction_summaries(
                 "total_ext_m": total_ext_m,
                 "overlap_ext_m": overlap_ext_m,
                 "overlap_stops": int(is_overlap.sum()),
-                "total_stops": int(len(route_stops)),
+                "total_stops": total_stops,
             }
         )
 
@@ -207,27 +218,9 @@ def _route_direction_radius_coverage_summaries(
     center_lon: float,
     radius_m: float,
 ) -> list[dict]:
-    route_trips = gtfs_smtuc.trips[gtfs_smtuc.trips["route_id"].astype(str) == str(route_id)].copy()
-    if route_trips.empty:
-        return []
-
-    if "direction_id" in route_trips.columns:
-        direction_values = route_trips["direction_id"].dropna().astype(str).unique().tolist() or ["na"]
-    else:
-        direction_values = ["na"]
-
     summaries: list[dict] = []
 
-    for direction in direction_values:
-        subset = route_trips if direction == "na" else route_trips[route_trips["direction_id"].astype(str) == direction]
-
-        route_stops = _representative_route_stops_for_subset(gtfs_smtuc, subset)
-        route_stops = route_stops.dropna(subset=["stop_lat", "stop_lon"]).reset_index(drop=True)
-        if len(route_stops) < 2:
-            continue
-
-        route_lat = route_stops["stop_lat"].astype(float).to_numpy()
-        route_lon = route_stops["stop_lon"].astype(float).to_numpy()
+    for route_lat, route_lon, _ in _iter_route_direction_stop_arrays(gtfs_smtuc, route_id):
 
         dist_to_center = _haversine_pairwise_m(
             np.full(route_lat.shape, center_lat, dtype=float),
