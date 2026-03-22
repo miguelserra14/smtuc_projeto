@@ -228,31 +228,34 @@ def test_temporal_overlaps() -> None:
     _require_dataset("metrobus")
 
     metrics = line_overlap_top(top_n=OVERLAP_SCAN_TOP_N)
-    
+
     if metrics.empty:
         pytest.skip("Sem dados de overlap para calcular temporal overlaps.")
-    
-    print("\n=== Temporal Overlap Data ===")
-    print(f"Colunas: {list(metrics.columns)}")
-    
-    # Validar que colunas existem
-    assert "temporal_overlaps_count" in metrics.columns
-    assert "temporal_overlaps_pct" in metrics.columns
-    
-    # Validar tipos
-    assert pd.api.types.is_numeric_dtype(metrics["temporal_overlaps_pct"])
-    assert pd.api.types.is_numeric_dtype(metrics["temporal_overlaps_count"])
-    
-    # Validar valores estão no intervalo esperado
-    temporal_pct = metrics["temporal_overlaps_pct"].dropna()
-    if not temporal_pct.empty:
-        assert (temporal_pct >= 0.0).all() and (temporal_pct <= 100.0).all()
-    
-    temporal_count = metrics["temporal_overlaps_count"].dropna()
-    if not temporal_count.empty:
-        assert (temporal_count >= 0).all()
-    
-    # Mostrar dados
-    print(metrics[['line', 'overlap_pct', 'temporal_overlaps_count', 'temporal_overlaps_pct']].head(10).to_string())
-    
-    assert isinstance(metrics, pd.DataFrame)
+
+    sample = metrics[metrics["overlap_pct"] > 0].head(5).copy()
+    if sample.empty:
+        pytest.skip("Sem linhas SMTUC com overlap espacial para teste temporal.")
+
+    sample = compute_temporal_overlaps_for_db(sample)
+
+    assert "temporal_spatial_candidates_count" in sample.columns
+    assert "temporal_overlaps_count" in sample.columns
+    assert "temporal_overlaps_pct" in sample.columns
+
+    total_spatial_candidates = int(sample["temporal_spatial_candidates_count"].fillna(0).sum())
+    total_temporal_overlaps = int(sample["temporal_overlaps_count"].fillna(0).sum())
+    overlap_stations = int(sample["overlap_stops"].fillna(0).sum()) if "overlap_stops" in sample.columns else 0
+    overlap_lines = int(sample["line"].nunique())
+    temporal_overlap_pct = (
+        (total_temporal_overlaps / total_spatial_candidates) * 100.0 if total_spatial_candidates > 0 else 0.0
+    )
+
+    print(
+        f"\n\n\nDe todas as vezes que um autocarro dos SMTUC passa numa estação com overlap espacial "
+        f"({total_spatial_candidates} vezes, em {overlap_stations} estações e {overlap_lines} linhas), "
+        f"há overlap temporal em {temporal_overlap_pct:.2f}% delas."
+    )
+
+    assert total_spatial_candidates >= 0
+    assert total_temporal_overlaps >= 0
+    assert total_temporal_overlaps <= total_spatial_candidates

@@ -14,16 +14,12 @@ from population._common import (
     load_bgri_file,
     resolve_path,
 )
-
+from config import CATCHMENT_M, DEFAULT_BGRI_GPKG_PATH, DEFAULT_BGRI_LAYER, DEFAULT_OUTPUT_GAP_CSV, UNDERSERVED_TOP_N
 try:
     import geopandas as gpd
 except Exception:  # pragma: no cover - optional dependency guard
     gpd = None
 
-
-DEFAULT_BGRI_GPKG_PATH = "data/dadospopulacaoBGRI/BGRI2021_0603.gpkg"
-DEFAULT_BGRI_LAYER = "BGRI2021_0603"
-DEFAULT_OUTPUT_GAP_CSV = "outputs/bgri_transport_gap.csv"
 
 
 def _require_geopandas() -> None:
@@ -63,7 +59,7 @@ def _departures_per_stop_for_day(dataset: str, day: date) -> pd.DataFrame:
 
 def compute_bgri_population_transport_gap(
     day_str: str,
-    catchment_m: float = 500.0,
+    catchment_m: float = CATCHMENT_M,
     datasets: Tuple[str, ...] = ("smtuc", "metrobus"),
     bgri_gpkg_path: str = DEFAULT_BGRI_GPKG_PATH,
     bgri_layer: str = DEFAULT_BGRI_LAYER,
@@ -158,8 +154,8 @@ def compute_bgri_population_transport_gap(
 
 def top_bgri_underserved(
     day_str: str,
-    top_n: int = 20,
-    catchment_m: float = 500.0,
+    top_n: int = UNDERSERVED_TOP_N,
+    catchment_m: float = CATCHMENT_M,
     datasets: Tuple[str, ...] = ("smtuc", "metrobus"),
     bgri_gpkg_path: str = DEFAULT_BGRI_GPKG_PATH,
     bgri_layer: str = DEFAULT_BGRI_LAYER,

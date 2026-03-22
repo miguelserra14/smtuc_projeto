@@ -21,6 +21,7 @@ from population.visualizations import (
     create_choropleth_map,
     create_scatter_plot,
 )
+from src.config import CATCHMENT_M, STADIUM_RADIUS_M
 
 
 @pytest.mark.integration
@@ -30,7 +31,7 @@ def test_population_detail_near_stadium_1km() -> None:
 
     total_pop, pop_1km, pct = get_population_near_stadium(
         bgri_gpkg_path=str(_require_bgri_data()),
-        radius_m=1000.0,
+        radius_m=STADIUM_RADIUS_M/2,  # 1km radius
     )
 
     print("\n=== População BGRI no raio de 1km do estádio (estimativa areal) ===")
@@ -53,7 +54,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     # Compute underserved zones
     merged = compute_underserved_zones(
         day_str=day_str,
-        catchment_m=500.0,
+        catchment_m=CATCHMENT_M,
         datasets=("smtuc", "metrobus"),
         bgri_gpkg_path=str(gpkg),
         bgri_layer="BGRI2021_0603",
@@ -83,7 +84,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     _write_readable_plotly_html(fig_map, map_html, "BGRI Coimbra — Choropleth")
 
     # Generate 2km choropleth
-    merged_2km = filter_zones_by_distance(merged, distance_m=2000.0)
+    merged_2km = filter_zones_by_distance(merged, distance_m=STADIUM_RADIUS_M)
     fig_map_2km = create_2km_choropleth_map(merged_2km, day_str, score_min, score_max, color_scale="Reds")
     map_2km_html = out_dir / "2kmstadium.html"
     _write_readable_plotly_html(fig_map_2km, map_2km_html, "BGRI Coimbra — Choropleth 2km")

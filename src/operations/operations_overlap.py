@@ -108,6 +108,13 @@ def compute_temporal_overlaps_for_db(
     """Adiciona colunas de overlap temporal ao DataFrame de métricas."""
     if metrics_df.empty:
         return metrics_df
+
+    if "temporal_spatial_candidates_count" not in metrics_df.columns:
+        metrics_df["temporal_spatial_candidates_count"] = 0
+    if "temporal_overlaps_count" not in metrics_df.columns:
+        metrics_df["temporal_overlaps_count"] = 0
+    if "temporal_overlaps_pct" not in metrics_df.columns:
+        metrics_df["temporal_overlaps_pct"] = 0.0
     
     gtfs_smtuc = _load_gtfs_cached(smtuc_dataset)
     gtfs_metro = _load_gtfs_cached(metrobus_dataset)
@@ -138,7 +145,18 @@ def compute_temporal_overlaps_for_db(
     line_to_route_ids = _line_to_route_ids(gtfs_smtuc)
     
     for idx, row in metrics_df.iterrows():
-        line = str(row["line"])
+        raw_line = row.get("line")
+        if pd.isna(raw_line):
+            continue
+
+        line = str(raw_line).strip()
+        if line.endswith(".0"):
+            try:
+                as_float = float(line)
+                if as_float.is_integer():
+                    line = str(int(as_float))
+            except ValueError:
+                pass
         
         if line not in line_to_route_ids:
             continue
@@ -190,10 +208,13 @@ def compute_temporal_overlaps_for_db(
                 if (time_diffs <= 300).any():
                     temporal_overlaps += 1
         
+        metrics_df.at[idx, "temporal_spatial_candidates_count"] = total_passages_nearby
+        metrics_df.at[idx, "temporal_overlaps_count"] = temporal_overlaps
         if total_passages_nearby > 0:
-            metrics_df.at[idx, "temporal_overlaps_count"] = temporal_overlaps
             metrics_df.at[idx, "temporal_overlaps_pct"] = round(
                 (temporal_overlaps / total_passages_nearby) * 100, 2
             )
+        else:
+            metrics_df.at[idx, "temporal_overlaps_pct"] = 0.0
     
     return metrics_df
