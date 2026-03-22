@@ -25,6 +25,7 @@ from operations.operations import (
     suggest_random_commute_options,
 )
 from operations.operations_overlap import (
+    compute_temporal_overlaps_for_db,
     line_low_overlap_near_stadium_top,
     line_overlap_top,
 )
@@ -35,6 +36,7 @@ OVERLAP_RENAME = {
     "overlap_extension_m": "Ovlp(m)",
     "line_extension_m": "Ext(m)",
     "overlap_pct": "Ovlp(%)",
+    "temporal_overlaps_pct": "Temp.Ovlp(%)",
     "overlap_stops": "Parag.Ovlp",
     "total_stops": "Parag.Tot",
     "directions_considered": "Sent",
@@ -219,3 +221,38 @@ def test_compare_nearest_network() -> None:
     assert winner in {"smtuc", "metrobus"}
     assert smtuc.distance_m >= 0
     assert metrobus.distance_m >= 0
+
+@pytest.mark.integration
+def test_temporal_overlaps() -> None:
+    _require_dataset("smtuc")
+    _require_dataset("metrobus")
+
+    metrics = line_overlap_top(top_n=OVERLAP_SCAN_TOP_N)
+    
+    if metrics.empty:
+        pytest.skip("Sem dados de overlap para calcular temporal overlaps.")
+    
+    print("\n=== Temporal Overlap Data ===")
+    print(f"Colunas: {list(metrics.columns)}")
+    
+    # Validar que colunas existem
+    assert "temporal_overlaps_count" in metrics.columns
+    assert "temporal_overlaps_pct" in metrics.columns
+    
+    # Validar tipos
+    assert pd.api.types.is_numeric_dtype(metrics["temporal_overlaps_pct"])
+    assert pd.api.types.is_numeric_dtype(metrics["temporal_overlaps_count"])
+    
+    # Validar valores estão no intervalo esperado
+    temporal_pct = metrics["temporal_overlaps_pct"].dropna()
+    if not temporal_pct.empty:
+        assert (temporal_pct >= 0.0).all() and (temporal_pct <= 100.0).all()
+    
+    temporal_count = metrics["temporal_overlaps_count"].dropna()
+    if not temporal_count.empty:
+        assert (temporal_count >= 0).all()
+    
+    # Mostrar dados
+    print(metrics[['line', 'overlap_pct', 'temporal_overlaps_count', 'temporal_overlaps_pct']].head(10).to_string())
+    
+    assert isinstance(metrics, pd.DataFrame)
