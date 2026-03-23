@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 
@@ -17,6 +19,7 @@ from operations.operations_overlap_db import (
     _load_gtfs_cached,
     _line_to_route_ids,
 )
+from gtfs_processing.gtfs_probe import _active_service_ids, _parse_day, _to_seconds
 
 
 def _filter_numeric_bus_lines(df: pd.DataFrame) -> pd.DataFrame:
@@ -477,3 +480,204 @@ def temporal_overlap_events_for_metrics(
             )
 
     return pd.DataFrame(events)
+
+
+def _current_day_time() -> tuple[str, str]:
+    now = datetime.now()
+    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
+
+
+def _reach_bin_label(minutes: float) -> str:
+    if minutes <= 10.0:
+        return "0-10"
+    if minutes <= 15.0:
+        return "10-15"
+    if minutes <= 30.0:
+        return "15-30"
+    if minutes <= 60.0:
+        return "30-60"
+    return ">60"
+
+
+def _reachable_stops_for_dataset_now(
+    dataset: str,
+    origin_lat: float,
+    origin_lon: float,
+    day_str: str,
+    time_str: str,
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
+    max_min: float = 60.0,
+    max_board_walk_min: float = 20.0,
+) -> pd.DataFrame:
+    gtfs = _load_gtfs_cached(dataset)
+
+    stops = gtfs.stops[["stop_id", "stop_lat", "stop_lon"]].dropna().copy()
+    if stops.empty:
+        return pd.DataFrame(columns=["dataset", "stop_id", "stop_lat", "stop_lon", "reach_min"])
+
+    stops["stop_id"] = stops["stop_id"].astype(str)
+    stop_ids = stops["stop_id"].to_numpy()
+    stop_lats = stops["stop_lat"].astype(float).to_numpy()
+    stop_lons = stops["stop_lon"].astype(float).to_numpy()
+
+    direct_walk_m = _distances_from_point_m(origin_lat, origin_lon, stop_lats, stop_lons)
+    direct_walk_min = direct_walk_m / float(walk_speed_m_min)
+
+    reach_by_stop = pd.Series(direct_walk_min, index=stop_ids, dtype="float64")
+
+    day = _parse_day(day_str)
+    t0 = int(_to_seconds(time_str))
+    active_services = _active_service_ids(gtfs, day)
+
+    trips = gtfs.trips[["trip_id", "service_id"]].copy()
+    trips["trip_id"] = trips["trip_id"].astype(str)
+    trips["service_id"] = trips["service_id"].astype(str)
+    if active_services:
+        trips = trips[trips["service_id"].isin(active_services)]
+    if trips.empty:
+        out = stops.copy()
+        out["dataset"] = dataset
+        out["reach_min"] = reach_by_stop.reindex(out["stop_id"]).astype(float).to_numpy()
+        return out[["dataset", "stop_id", "stop_lat", "stop_lon", "reach_min"]]
+
+    st_cols = ["trip_id", "stop_id", "stop_sequence", "departure_seconds", "arrival_seconds"]
+    st = gtfs.stop_times[st_cols].copy()
+    st["trip_id"] = st["trip_id"].astype(str)
+    st["stop_id"] = st["stop_id"].astype(str)
+    st = st.merge(trips, on="trip_id", how="inner")
+    if st.empty:
+        out = stops.copy()
+        out["dataset"] = dataset
+        out["reach_min"] = reach_by_stop.reindex(out["stop_id"]).astype(float).to_numpy()
+        return out[["dataset", "stop_id", "stop_lat", "stop_lon", "reach_min"]]
+
+    walk_df = pd.DataFrame({"stop_id": stop_ids, "walk_to_board_min": direct_walk_min})
+    boardable_ids = set(walk_df.loc[walk_df["walk_to_board_min"] <= float(max_board_walk_min), "stop_id"].astype(str))
+
+    board = st[
+        st["stop_id"].isin(boardable_ids)
+        & st["departure_seconds"].notna()
+        & (st["departure_seconds"].astype(float) >= float(t0))
+    ][["trip_id", "stop_id", "stop_sequence", "departure_seconds"]].copy()
+
+    if not board.empty:
+        board = board.merge(walk_df, on="stop_id", how="left")
+
+        alight = st[["trip_id", "stop_id", "stop_sequence", "arrival_seconds"]].copy()
+        alight = alight.rename(
+            columns={
+                "stop_id": "alight_stop_id",
+                "stop_sequence": "alight_seq",
+                "arrival_seconds": "alight_arrival_s",
+            }
+        )
+
+        board = board.rename(
+            columns={
+                "stop_sequence": "board_seq",
+                "departure_seconds": "board_dep_s",
+            }
+        )
+
+        pairs = board.merge(alight, on="trip_id", how="inner")
+        pairs = pairs[
+            pairs["alight_arrival_s"].notna()
+            & (pairs["alight_seq"].astype(float) > pairs["board_seq"].astype(float))
+        ].copy()
+
+        if not pairs.empty:
+            pairs["total_min"] = (
+                pairs["walk_to_board_min"].astype(float)
+                + (pairs["board_dep_s"].astype(float) - float(t0)) / 60.0
+                + (pairs["alight_arrival_s"].astype(float) - pairs["board_dep_s"].astype(float)) / 60.0
+            )
+            pairs = pairs[pairs["total_min"] >= 0.0]
+
+            if not pairs.empty:
+                best_transit = pairs.groupby("alight_stop_id", as_index=False).agg(reach_min=("total_min", "min"))
+                best_transit["alight_stop_id"] = best_transit["alight_stop_id"].astype(str)
+
+                for _, row in best_transit.iterrows():
+                    sid = str(row["alight_stop_id"])
+                    best = float(row["reach_min"])
+                    current = float(reach_by_stop.get(sid, np.inf))
+                    if best < current:
+                        reach_by_stop.loc[sid] = best
+
+    out = stops.copy()
+    out["dataset"] = dataset
+    out["reach_min"] = reach_by_stop.reindex(out["stop_id"]).astype(float).to_numpy()
+    out = out[out["reach_min"].notna()].copy()
+    out = out[out["reach_min"] <= float(max_min)].copy()
+    return out[["dataset", "stop_id", "stop_lat", "stop_lon", "reach_min"]]
+
+
+def compute_bgri_reachability_now(
+    merged_bgri,
+    origin_lat: float = STADIUM_COORD[0],
+    origin_lon: float = STADIUM_COORD[1],
+    datasets: tuple[str, ...] = ("smtuc", "metrobus"),
+    day_str: str | None = None,
+    time_str: str | None = None,
+    walk_speed_m_min: float = WALK_SPEED_M_MIN,
+    max_min: float = 60.0,
+) -> pd.DataFrame:
+    """Calcula tempo mínimo estimado para alcançar cada zona BGRI no momento atual."""
+    if day_str is None or time_str is None:
+        now_day, now_time = _current_day_time()
+        day_str = day_str or now_day
+        time_str = time_str or now_time
+
+    stops_reach = []
+    for dataset in datasets:
+        dataset_reach = _reachable_stops_for_dataset_now(
+            dataset=dataset,
+            origin_lat=origin_lat,
+            origin_lon=origin_lon,
+            day_str=day_str,
+            time_str=time_str,
+            walk_speed_m_min=walk_speed_m_min,
+            max_min=max_min,
+        )
+        if not dataset_reach.empty:
+            stops_reach.append(dataset_reach)
+
+    if not stops_reach:
+        out = merged_bgri.copy()
+        out["reach_min"] = np.inf
+        out["reach_mode"] = "a pé"
+        out["reach_bin"] = ">60"
+        out["reach_day"] = day_str
+        out["reach_time"] = time_str
+        return out
+
+    stop_df = pd.concat(stops_reach, ignore_index=True)
+    stop_lat = stop_df["stop_lat"].astype(float).to_numpy()
+    stop_lon = stop_df["stop_lon"].astype(float).to_numpy()
+    stop_reach = stop_df["reach_min"].astype(float).to_numpy()
+
+    gdf_3763 = merged_bgri.to_crs("EPSG:3763").copy()
+    centroids = gdf_3763.geometry.centroid
+    centroids_ll = centroids.to_crs("EPSG:4326")
+    cent_lat = centroids_ll.y.astype(float).to_numpy()
+    cent_lon = centroids_ll.x.astype(float).to_numpy()
+
+    direct_walk_min = _distances_from_point_m(origin_lat, origin_lon, cent_lat, cent_lon) / float(walk_speed_m_min)
+
+    pt_best_min = np.full(shape=len(gdf_3763), fill_value=np.inf, dtype="float64")
+    for idx in range(len(gdf_3763)):
+        d_to_stops_m = _distances_from_point_m(cent_lat[idx], cent_lon[idx], stop_lat, stop_lon)
+        candidate = stop_reach + (d_to_stops_m / float(walk_speed_m_min))
+        if len(candidate) > 0:
+            pt_best_min[idx] = float(np.min(candidate))
+
+    reach_min = np.minimum(direct_walk_min, pt_best_min)
+    reach_mode = np.where(pt_best_min + 1e-9 < direct_walk_min, "transporte público", "a pé")
+
+    out = merged_bgri.copy()
+    out["reach_min"] = reach_min
+    out["reach_mode"] = reach_mode
+    out["reach_bin"] = pd.Series(reach_min).apply(_reach_bin_label).astype(str)
+    out["reach_day"] = str(day_str)
+    out["reach_time"] = str(time_str)
+    return out

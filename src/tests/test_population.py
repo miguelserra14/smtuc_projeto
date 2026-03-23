@@ -22,7 +22,7 @@ from population.visualizations import (
     create_population_heatmap,
     create_scatter_plot,
 )
-from src.config import CATCHMENT_M, STADIUM_RADIUS_M
+from src.config import CATCHMENT_M, STADIUM_RADIUS_M, OUTPUTS_POPULATION_DIR
 
 
 @pytest.mark.integration
@@ -60,7 +60,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
         bgri_gpkg_path=str(gpkg),
         bgri_layer="BGRI2021_0603",
         population_col="N_INDIVIDUOS",
-        output_csv_path="outputs/bgri_transport_gap.csv",
+        output_csv_path=f"{OUTPUTS_POPULATION_DIR}/bgri_transport_gap.csv",
     )
 
     print("\n=== Top 10 zonas BGRI mais subservidas (população vs oferta) ===")
@@ -70,7 +70,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
         .to_string(index=False)
     )
 
-    out_dir = _project_root() / "outputs"
+    out_dir = _project_root() / OUTPUTS_POPULATION_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate main choropleth

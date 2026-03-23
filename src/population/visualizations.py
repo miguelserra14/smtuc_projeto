@@ -14,6 +14,11 @@ except Exception:  # pragma: no cover - optional dependency guard
     px = None
     pio = None
 
+try:
+    import folium
+except Exception:  # pragma: no cover - optional dependency guard
+    folium = None
+
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="pt">
@@ -93,6 +98,13 @@ def _write_readable_plotly_html(
     
     # Write to file
     output_path.write_text(html_content, encoding="utf-8")
+
+
+def _write_folium_html(map_obj: object, output_path: Path | str) -> None:
+    """Write a Folium map to an HTML file."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    map_obj.save(str(output_path))
 
 
 def _create_choropleth_generic(
@@ -304,3 +316,124 @@ def create_scatter_plot(
     )
 
     return fig_scatter
+
+
+def create_overlap_reachability_map(
+    reach_gdf: gpd.GeoDataFrame,
+    origin_lat: float,
+    origin_lon: float,
+    day_str: str,
+    time_str: str,
+) -> object:
+    """
+    Create overlap reachability map with 10/15/30/60 minute classes.
+
+    Args:
+        reach_gdf: GeoDataFrame with reach_min, reach_mode, reach_bin columns
+        origin_lat: Origin latitude
+        origin_lon: Origin longitude
+        day_str: Day in format "YYYY-MM-DD"
+        time_str: Time in format "HH:MM:SS"
+
+    Returns:
+        Folium map object
+    """
+    if folium is None:
+        raise ImportError("folium não está disponível para gerar visualizações de mapa")
+
+    gdf = reach_gdf.to_crs("EPSG:4326").copy()
+    if "BGRI2021" not in gdf.columns:
+        gdf["BGRI2021"] = gdf.index.astype(str)
+
+    gdf["reach_min"] = gdf["reach_min"].astype(float)
+    gdf["reach_min_display"] = gdf["reach_min"].map(lambda v: f"{v:.1f} min" if v <= 9999 else ">60 min")
+
+    color_by_bin = {
+        "0-10": "#d73027",
+        "10-15": "#fc8d59",
+        "15-30": "#fee08b",
+        "30-60": "#91cf60",
+        ">60": "#1a9850",
+    }
+
+    m = folium.Map(
+        location=[origin_lat, origin_lon],
+        zoom_start=13,
+        tiles="cartodbpositron",
+        control_scale=True,
+    )
+
+    def _style_fn(feature):
+        reach_bin = str(feature["properties"].get("reach_bin", ">60"))
+        return {
+            "fillColor": color_by_bin.get(reach_bin, "#1a9850"),
+            "color": "#333333",
+            "weight": 0.6,
+            "fillOpacity": 0.55,
+        }
+
+    tooltip_fields = [
+        "BGRI2021",
+        "reach_min_display",
+        "reach_bin",
+        "reach_mode",
+        "N_INDIVIDUOS",
+    ]
+    tooltip_aliases = [
+        "Zona BGRI",
+        "Tempo estimado",
+        "Classe",
+        "Modo dominante",
+        "População",
+    ]
+
+    present_fields = [f for f in tooltip_fields if f in gdf.columns]
+    present_aliases = [tooltip_aliases[tooltip_fields.index(f)] for f in present_fields]
+
+    folium.GeoJson(
+        data=gdf,
+        name="Alcance temporal",
+        style_function=_style_fn,
+        tooltip=folium.GeoJsonTooltip(
+            fields=present_fields,
+            aliases=present_aliases,
+            localize=True,
+            sticky=True,
+            style=(
+                "background-color: #ffffff;"
+                " color: #222222;"
+                " border: 1px solid #999999;"
+                " border-radius: 4px;"
+                " box-shadow: 0 1px 3px rgba(0,0,0,0.2);"
+                " padding: 6px;"
+                " font-size: 12px;"
+            ),
+        ),
+    ).add_to(m)
+
+    folium.CircleMarker(
+        location=[origin_lat, origin_lon],
+        radius=7,
+        color="#b30000",
+        fill=True,
+        fill_color="#e34a33",
+        fill_opacity=1.0,
+        tooltip=f"Origem ({day_str} {time_str})",
+    ).add_to(m)
+
+    legend_html = """
+    <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
+                background: white; border: 1px solid #999; padding: 10px 12px;
+                font-size: 12px; line-height: 1.3;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Tempo de alcance (min)</div>
+      <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10</div>
+      <div><span style="display:inline-block;width:12px;height:12px;background:#fc8d59;margin-right:6px;"></span>10-15</div>
+      <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>15-30</div>
+      <div><span style="display:inline-block;width:12px;height:12px;background:#91cf60;margin-right:6px;"></span>30-60</div>
+      <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>&gt;60</div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    return m

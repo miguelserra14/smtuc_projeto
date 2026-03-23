@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 import pytest
 
-from config import STADIUM_RADIUS_M, CATCHMENT_M
+from config import STADIUM_RADIUS_M, CATCHMENT_M, DEFAULT_OUTPUT_GAP_CSV
 from population._common import (
     create_stadium_point,
     ensure_crs,
@@ -94,7 +94,7 @@ def compute_underserved_zones(
     bgri_gpkg_path: Optional[str] = None,
     bgri_layer: str = "BGRI2021_0603",
     population_col: str = "N_INDIVIDUOS",
-    output_csv_path: str = "outputs/bgri_transport_gap.csv",
+    output_csv_path: str = DEFAULT_OUTPUT_GAP_CSV,
 ) -> gpd.GeoDataFrame:
     """
     Compute BGRI underserved zones and merge with geographic data.

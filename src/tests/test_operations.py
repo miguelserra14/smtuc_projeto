@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +13,7 @@ from config import (
     STADIUM_COORD,
     STADIUM_MIN_EXTENSION_PCT,
     STADIUM_RADIUS_M,
+    OUTPUTS_OVERLAP_DIR,
     WORK_COORD,
 )
 
@@ -25,11 +26,14 @@ from operations.operations import (
     suggest_random_commute_options,
 )
 from operations.operations_overlap import (
+    compute_bgri_reachability_now,
     compute_temporal_overlaps_for_db,
     line_low_overlap_near_stadium_top,
     line_overlap_top,
     temporal_overlap_events_for_metrics,
 )
+from population.data_processing import compute_underserved_zones
+from population.visualizations import create_overlap_reachability_map, _write_folium_html
 
 OVERLAP_RENAME = {
     "line": "Linha",
@@ -221,6 +225,48 @@ def test_compare_nearest_network() -> None:
     assert winner in {"smtuc", "metrobus"}
     assert smtuc.distance_m >= 0
     assert metrobus.distance_m >= 0
+
+
+@pytest.mark.integration
+def test_overlap_reachability_map_now() -> None:
+    _require_dataset("smtuc")
+    _require_dataset("metrobus")
+
+    now = datetime.now()
+    day_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M:%S")
+
+    merged = compute_underserved_zones(
+        day_str=day_str,
+    )
+
+    reach_gdf = compute_bgri_reachability_now(
+        merged_bgri=merged,
+        origin_lat=STADIUM_COORD[0],
+        origin_lon=STADIUM_COORD[1],
+        day_str=day_str,
+        time_str=time_str,
+    )
+
+    fig_map = create_overlap_reachability_map(
+        reach_gdf=reach_gdf,
+        origin_lat=STADIUM_COORD[0],
+        origin_lon=STADIUM_COORD[1],
+        day_str=day_str,
+        time_str=time_str,
+    )
+
+    out_dir = Path(__file__).resolve().parents[2] / OUTPUTS_OVERLAP_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output_html = out_dir / "overlap_reachability_now.html"
+    _write_folium_html(fig_map, output_html)
+
+    print(f"Mapa overlap reachability gerado: {output_html}")
+
+    assert output_html.exists()
+    assert "reach_min" in reach_gdf.columns
+    assert "reach_bin" in reach_gdf.columns
+    assert "reach_mode" in reach_gdf.columns
 
 @pytest.mark.integration
 def test_temporal_overlaps() -> None:

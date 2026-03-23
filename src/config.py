@@ -14,7 +14,11 @@ STADIUM_RADIUS_M  = 2000.0
 CATCHMENT_M = 500.0
 STADIUM_MIN_EXTENSION_PCT = 50.0
 
-LINE_METRICS_DB_PATH = "outputs/line_metrics_db.csv"
+OUTPUTS_ROOT_DIR = "outputs"
+OUTPUTS_POPULATION_DIR = "outputs/population"
+OUTPUTS_OVERLAP_DIR = "outputs/overlap"
+
+LINE_METRICS_DB_PATH = "outputs/overlap/line_metrics_db.csv"
 DEFAULT_BGRI_GPKG_PATH = "data/dadospopulacaoBGRI/BGRI2021_0603.gpkg"
 DEFAULT_BGRI_LAYER = "BGRI2021_0603"
-DEFAULT_OUTPUT_GAP_CSV = "outputs/bgri_transport_gap.csv"
+DEFAULT_OUTPUT_GAP_CSV = "outputs/population/bgri_transport_gap.csv"
