@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 WALK_SPEED_M_MIN = 80.0
+TEMPORAL_OVERLAP_MAX_MIN = 5.0
 
 HOME_COORD = (40.207883, -8.398107)
 WORK_COORD = (40.186724, -8.416078)
