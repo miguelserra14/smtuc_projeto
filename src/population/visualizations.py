@@ -202,6 +202,35 @@ def create_2km_choropleth_map(
     )
 
 
+def create_population_heatmap(
+    merged: gpd.GeoDataFrame,
+    day_str: str,
+    color_scale: str = "RdYlGn",
+) -> object:
+    """
+    Create choropleth heatmap for population distribution.
+
+    Args:
+        merged: GeoDataFrame with N_INDIVIDUOS column
+        day_str: Day in format "YYYY-MM-DD"
+        color_scale: Plotly color scale name
+
+    Returns:
+        Plotly figure object
+    """
+    map_title = f"BGRI Coimbra — Heatmap de População (dia {day_str})"
+    return _create_choropleth_generic(
+        merged,
+        map_title,
+        color_scale,
+        color_col="N_INDIVIDUOS",
+        hover_data={
+            "N_INDIVIDUOS": ":.0f",
+            "BGRI2021": True,
+        },
+    )
+
+
 def create_scatter_plot(
     scatter_df,
     day_str: str,

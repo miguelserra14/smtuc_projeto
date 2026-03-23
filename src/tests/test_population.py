@@ -19,6 +19,7 @@ from population.visualizations import (
     _write_readable_plotly_html,
     create_2km_choropleth_map,
     create_choropleth_map,
+    create_population_heatmap,
     create_scatter_plot,
 )
 from src.config import CATCHMENT_M, STADIUM_RADIUS_M
@@ -73,7 +74,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate main choropleth
-    fig_map = create_choropleth_map(merged, day_str, color_scale="Reds")
+    fig_map = create_choropleth_map(merged, day_str, color_scale="YlOrRd")
     map_html = out_dir / "bgri_underservice_choropleth.html"
     _write_readable_plotly_html(fig_map, map_html, "BGRI Coimbra — Choropleth")
 
@@ -89,11 +90,22 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     scatter_html = out_dir / "bgri_population_vs_supply_scatter.html"
     _write_readable_plotly_html(fig_scatter, scatter_html, "BGRI Coimbra — Scatter")
 
+    # Generate population heatmap (red -> green)
+    fig_population_heatmap = create_population_heatmap(merged, day_str, color_scale="RdYlGn")
+    population_heatmap_html = out_dir / "bgri_population_heatmap.html"
+    _write_readable_plotly_html(
+        fig_population_heatmap,
+        population_heatmap_html,
+        "BGRI Coimbra — Heatmap de População",
+    )
+
     print(f"Mapa gerado: {map_html}")
     print(f"Mapa (<=2km estádio) gerado: {map_2km_html}")
     print(f"Scatter gerado: {scatter_html}")
+    print(f"Heatmap de população gerado: {population_heatmap_html}")
 
     assert len(merged) > 0
     assert map_html.exists()
     assert map_2km_html.exists()
     assert scatter_html.exists()
+    assert population_heatmap_html.exists()
