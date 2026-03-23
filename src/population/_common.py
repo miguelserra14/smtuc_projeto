@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
+import geopandas as gpd
 
 from config import STADIUM_COORD
 
 if TYPE_CHECKING:
-    import geopandas as gpd
+    pass
 
 
 def project_root() -> Path:

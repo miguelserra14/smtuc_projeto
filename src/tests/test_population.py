@@ -72,12 +72,6 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
     out_dir = _project_root() / "outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get color range for choropleth
-    score_min = float(merged["underservice_score"].min())
-    score_max = float(merged["underservice_score"].max())
-    if score_max <= score_min:
-        score_max = score_min + 1.0
-
     # Generate main choropleth
     fig_map = create_choropleth_map(merged, day_str, color_scale="Reds")
     map_html = out_dir / "bgri_underservice_choropleth.html"
@@ -85,7 +79,7 @@ def test_bgri_underserved_zones_with_visualizations() -> None:
 
     # Generate 2km choropleth
     merged_2km = filter_zones_by_distance(merged, distance_m=STADIUM_RADIUS_M)
-    fig_map_2km = create_2km_choropleth_map(merged_2km, day_str, score_min, score_max, color_scale="Reds")
+    fig_map_2km = create_2km_choropleth_map(merged_2km, day_str, color_scale="YlOrRd")
     map_2km_html = out_dir / "2kmstadium.html"
     _write_readable_plotly_html(fig_map_2km, map_2km_html, "BGRI Coimbra — Choropleth 2km")
 

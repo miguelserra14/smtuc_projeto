@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -22,6 +23,37 @@ from population.operations_population import (
 if TYPE_CHECKING:
     import geopandas as gpd
 
+
+def _project_root() -> Path:
+    """Wrapper for project_root() to match test imports."""
+    return project_root()
+
+
+def _next_monday(from_date: date) -> date:
+    """
+    Get the next Monday from a given date.
+    
+    Args:
+        from_date: Starting date
+        
+    Returns:
+        Next Monday date (or today if today is Monday)
+    """
+    # Monday is 0 in Python's weekday()
+    days_until_monday = (7 - from_date.weekday()) % 7
+    if days_until_monday == 0:
+        # If today is Monday, return today
+        return from_date
+    return from_date + timedelta(days=days_until_monday)
+
+
+def _require_geo_stack() -> None:
+    """Check if geospatial stack is available and skip test if not."""
+    try:
+        import geopandas as gpd
+        import shapely
+    except ImportError:
+        pytest.skip("GeoPandas or Shapely não está disponível")
 
 
 def _require_bgri_data() -> Path:

@@ -56,7 +56,7 @@ def _departures_per_stop_for_day(dataset: str, day: date) -> pd.DataFrame:
     dep["departures"] = dep["departures"].astype(float)
     return dep.dropna(subset=["stop_lat", "stop_lon"]).reset_index(drop=True)
 
-
+#explicar aprofundadamente como é que o score é calculado. e como adaptar a cada situacao
 def compute_bgri_population_transport_gap(
     day_str: str,
     catchment_m: float = CATCHMENT_M,

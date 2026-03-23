@@ -9,8 +9,10 @@ import geopandas as gpd
 
 try:
     import plotly.express as px
+    import plotly.io as pio
 except Exception:  # pragma: no cover - optional dependency guard
     px = None
+    pio = None
 
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
@@ -64,10 +66,39 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
+def _write_readable_plotly_html(
+    fig: object,
+    output_path: Path | str,
+    title: str = "Visualization",
+) -> None:
+    """
+    Write a readable Plotly figure to an HTML file with dark mode protection.
+
+    Args:
+        fig: Plotly figure object
+        output_path: Path where to save the HTML file
+        title: HTML page title
+    """
+    if pio is None:
+        raise ImportError("plotly.io não está disponível")
+    
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Get figure JSON
+    fig_json = pio.to_json(fig)
+    
+    # Fill template with figure JSON and title
+    html_content = _HTML_TEMPLATE.format(figure_json=fig_json, title=title)
+    
+    # Write to file
+    output_path.write_text(html_content, encoding="utf-8")
+
+
 def _create_choropleth_generic(
     gdf: gpd.GeoDataFrame,
     title: str,
-    color_scale: str = "Reds",
+    color_scale: str = "YlOrRd",
     color_col: str = "underservice_score",
     range_color: Optional[Tuple[float, float]] = None,
     hover_data: Optional[Dict] = None,
@@ -98,11 +129,15 @@ def _create_choropleth_generic(
         }
     
     if range_color is None:
-        score_min = float(gdf[color_col].min())
-        score_max = float(gdf[color_col].max())
-        if score_max <= score_min:
-            score_max = score_min + 1.0
-        range_color = (score_min, score_max)
+        # Use robust percentiles instead of min/max to avoid outlier distortion
+        score_p5 = float(gdf[color_col].quantile(0.05))
+        score_p95 = float(gdf[color_col].quantile(0.90))
+        if score_p95 <= score_p5:
+            score_p5 = float(gdf[color_col].min())
+            score_p95 = float(gdf[color_col].max())
+        if score_p95 <= score_p5:
+            score_p95 = score_p5 + 1.0
+        range_color = (score_p5, score_p95)
     
     geojson = gdf.to_crs("EPSG:4326").__geo_interface__
     
@@ -126,7 +161,7 @@ def _create_choropleth_generic(
 def create_choropleth_map(
     merged: gpd.GeoDataFrame,
     day_str: str,
-    color_scale: str = "Reds",
+    color_scale: str = "YlOrRd",
 ) -> object:
     """
     Create choropleth map for underservice score.
@@ -146,9 +181,7 @@ def create_choropleth_map(
 def create_2km_choropleth_map(
     merged_2km: gpd.GeoDataFrame,
     day_str: str,
-    score_min: float,
-    score_max: float,
-    color_scale: str = "Reds",
+    color_scale: str = "YlOrRd",
 ) -> object:
     """
     Create choropleth map for zones within 2km of stadium.
@@ -156,19 +189,16 @@ def create_2km_choropleth_map(
     Args:
         merged_2km: GeoDataFrame with zones within 2km
         day_str: Day in format "YYYY-MM-DD"
-        score_min: Minimum score for color range
-        score_max: Maximum score for color range
         color_scale: Plotly color scale name
 
     Returns:
         Plotly figure object
     """
-    map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 500m)"
+    map_title = f"BGRI Coimbra — Índice de Subserviço (dia {day_str}, raio 2km)"
     return _create_choropleth_generic(
         merged_2km,
         map_title,
         color_scale,
-        range_color=(score_min, score_max),
     )
 
 
@@ -189,12 +219,14 @@ def create_scatter_plot(
     if px is None:
         raise ImportError("plotly não está disponível para gerar visualizações")
 
-    scatter_score_min = float(scatter_df["underservice_score"].min())
-    scatter_score_q95 = float(scatter_df["underservice_score"].quantile(0.95))
-    if scatter_score_q95 <= scatter_score_min:
-        scatter_score_q95 = float(scatter_df["underservice_score"].max())
-    if scatter_score_q95 <= scatter_score_min:
-        scatter_score_q95 = scatter_score_min + 1.0
+    # Use robust percentiles to handle outliers gracefully
+    scatter_score_p5 = float(scatter_df["underservice_score"].quantile(0.05))
+    scatter_score_p95 = float(scatter_df["underservice_score"].quantile(0.95))
+    if scatter_score_p95 <= scatter_score_p5:
+        scatter_score_p5 = float(scatter_df["underservice_score"].min())
+        scatter_score_p95 = float(scatter_df["underservice_score"].max())
+    if scatter_score_p95 <= scatter_score_p5:
+        scatter_score_p95 = scatter_score_p5 + 1.0
 
     fig_scatter = px.scatter(
         scatter_df,
@@ -204,7 +236,7 @@ def create_scatter_plot(
         size="N_INDIVIDUOS",
         hover_name="BGRI2021",
         color_continuous_scale="YlOrRd",
-        range_color=(scatter_score_min, scatter_score_q95),
+        range_color=(scatter_score_p5, scatter_score_p95),
         title=f"População vs Oferta por BGRI (dia {day_str})",
         labels={
             "supply_departures": "Oferta (n.º de passagens no dia)",
