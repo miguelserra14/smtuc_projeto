@@ -33,7 +33,7 @@ from overlap.overlap import (
     temporal_overlap_events_for_metrics,
 )
 from population.data_processing import compute_underserved_zones
-from population.visualizations import create_overlap_reachability_map, _write_folium_html
+from visualizations import create_overlap_reachability_map, _write_folium_html
 
 OVERLAP_RENAME = {
     "line": "Linha",

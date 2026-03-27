@@ -18,7 +18,7 @@ from population.data_processing import (
     filter_zones_by_distance,
     get_population_near_stadium,
 )
-from population.visualizations import (
+from visualizations import (
     _write_readable_plotly_html,
     create_2km_choropleth_map,
     create_choropleth_map,

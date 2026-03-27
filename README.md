@@ -83,3 +83,17 @@ No fim do MVP, deve ser possível responder com dados a:
 - onde o Metrobus já cobre bem a procura;
 - onde os SMTUC devem reforçar/adaptar serviço;
 - que alterações melhoram tempo de viagem e cobertura.
+
+## Próximos passos (smtuc-vad)
+
+- [ ] smtuc-vad
+  - [ ] melhorar london map: menos pesado
+    - [ ] trocar cores
+  - [ ] refatorizar e limpar bloated
+  - [ ] mais dados
+    - [ ] relevo
+    - [ ] onde é que as pessoas trabalham
+  - [ ] visualizações
+    - [ ] cores: verde para vermelho
+    - [ ] overlaps
+    - [ ] índice de subserviço com parte mais densa da cidade
