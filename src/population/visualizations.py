@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict
 
 import geopandas as gpd
+from shapely.ops import unary_union
 
 try:
     import plotly.express as px
@@ -326,7 +327,7 @@ def create_overlap_reachability_map(
     time_str: str,
 ) -> object:
     """
-    Create overlap reachability map with 10/15/30/60 minute classes.
+    Create a true isochrone map with 10-minute bands from a fixed origin.
 
     Args:
         reach_gdf: GeoDataFrame with reach_min, reach_mode, reach_bin columns
@@ -341,20 +342,96 @@ def create_overlap_reachability_map(
     if folium is None:
         raise ImportError("folium não está disponível para gerar visualizações de mapa")
 
-    gdf = reach_gdf.to_crs("EPSG:4326").copy()
-    if "BGRI2021" not in gdf.columns:
-        gdf["BGRI2021"] = gdf.index.astype(str)
+    gdf = reach_gdf.copy()
+    if gdf.empty or "geometry" not in gdf.columns:
+        m = folium.Map(location=[origin_lat, origin_lon], zoom_start=13, tiles="cartodbpositron", control_scale=True)
+        folium.CircleMarker(
+            location=[origin_lat, origin_lon],
+            radius=7,
+            color="#b30000",
+            fill=True,
+            fill_color="#e34a33",
+            fill_opacity=1.0,
+            weight=2,
+            tooltip=f"Origem ({day_str} {time_str})",
+        ).add_to(m)
+        return m
 
+    gdf = gdf[gdf.geometry.notna()].copy()
+    gdf = gdf[gdf.geometry.is_valid].copy()
     gdf["reach_min"] = gdf["reach_min"].astype(float)
-    gdf["reach_min_display"] = gdf["reach_min"].map(lambda v: f"{v:.1f} min" if v <= 9999 else ">60 min")
 
-    color_by_bin = {
+    try:
+        metric_crs = gdf.estimate_utm_crs()
+        gdf_metric = gdf.to_crs(metric_crs) if metric_crs else gdf.to_crs("EPSG:3857")
+    except Exception:
+        gdf_metric = gdf.to_crs("EPSG:3857")
+
+    thresholds = [10, 20, 30, 40, 50, 60]
+    smooth_m = 120.0
+    color_by_band = {
         "0-10": "#d73027",
-        "10-15": "#fc8d59",
-        "15-30": "#fee08b",
-        "30-60": "#91cf60",
-        ">60": "#1a9850",
+        "10-20": "#f46d43",
+        "20-30": "#fdae61",
+        "30-40": "#fee08b",
+        "40-50": "#a6d96a",
+        "50-60": "#1a9850",
     }
+
+    cumulative_geoms: dict[int, object | None] = {}
+    for upper in thresholds:
+        subset = gdf_metric[gdf_metric["reach_min"] <= float(upper)]
+        if subset.empty:
+            cumulative_geoms[upper] = None
+            continue
+        merged = unary_union(subset.geometry.values)
+        if merged.is_empty:
+            cumulative_geoms[upper] = None
+            continue
+        smoothed = merged.buffer(smooth_m).buffer(-smooth_m)
+        if smoothed.is_empty:
+            smoothed = merged
+        cumulative_geoms[upper] = smoothed.buffer(0)
+
+    band_records = []
+    prev_geom = None
+    for upper in thresholds:
+        curr_geom = cumulative_geoms.get(upper)
+        if curr_geom is None or curr_geom.is_empty:
+            continue
+        band_geom = curr_geom if prev_geom is None else curr_geom.difference(prev_geom)
+        band_geom = band_geom.buffer(0)
+        if band_geom.is_empty:
+            prev_geom = curr_geom
+            continue
+        lower = upper - 10
+        band_label = f"{lower}-{upper}"
+        band_records.append(
+            {
+                "band_label": band_label,
+                "upper_min": upper,
+                "area_km2": float(band_geom.area) / 1_000_000.0,
+                "geometry": band_geom,
+            }
+        )
+        prev_geom = curr_geom
+
+    if not band_records:
+        m = folium.Map(location=[origin_lat, origin_lon], zoom_start=13, tiles="cartodbpositron", control_scale=True)
+        folium.CircleMarker(
+            location=[origin_lat, origin_lon],
+            radius=7,
+            color="#b30000",
+            fill=True,
+            fill_color="#e34a33",
+            fill_opacity=1.0,
+            weight=2,
+            tooltip=f"Origem ({day_str} {time_str})",
+        ).add_to(m)
+        return m
+
+    iso_gdf_metric = gpd.GeoDataFrame(band_records, geometry="geometry", crs=gdf_metric.crs)
+    iso_gdf = iso_gdf_metric.to_crs("EPSG:4326")
 
     m = folium.Map(
         location=[origin_lat, origin_lon],
@@ -364,39 +441,21 @@ def create_overlap_reachability_map(
     )
 
     def _style_fn(feature):
-        reach_bin = str(feature["properties"].get("reach_bin", ">60"))
+        label = str(feature["properties"].get("band_label", "50-60"))
         return {
-            "fillColor": color_by_bin.get(reach_bin, "#1a9850"),
-            "color": "#333333",
-            "weight": 0.6,
+            "fillColor": color_by_band.get(label, "#1a9850"),
+            "color": "#ffffff",
+            "weight": 1.0,
             "fillOpacity": 0.55,
         }
 
-    tooltip_fields = [
-        "BGRI2021",
-        "reach_min_display",
-        "reach_bin",
-        "reach_mode",
-        "N_INDIVIDUOS",
-    ]
-    tooltip_aliases = [
-        "Zona BGRI",
-        "Tempo estimado",
-        "Classe",
-        "Modo dominante",
-        "População",
-    ]
-
-    present_fields = [f for f in tooltip_fields if f in gdf.columns]
-    present_aliases = [tooltip_aliases[tooltip_fields.index(f)] for f in present_fields]
-
     folium.GeoJson(
-        data=gdf,
-        name="Alcance temporal",
+        data=iso_gdf,
+        name="Isócronas (10 min)",
         style_function=_style_fn,
         tooltip=folium.GeoJsonTooltip(
-            fields=present_fields,
-            aliases=present_aliases,
+            fields=["band_label", "area_km2"],
+            aliases=["Intervalo (min)", "Área (km²)"],
             localize=True,
             sticky=True,
             style=(
@@ -418,21 +477,35 @@ def create_overlap_reachability_map(
         fill=True,
         fill_color="#e34a33",
         fill_opacity=1.0,
+        weight=2,
         tooltip=f"Origem ({day_str} {time_str})",
     ).add_to(m)
+
+    area_lookup = {str(row["band_label"]): float(row["area_km2"]) for _, row in iso_gdf_metric.iterrows()}
+    total_30 = area_lookup.get("0-10", 0.0) + area_lookup.get("10-20", 0.0) + area_lookup.get("20-30", 0.0)
 
     legend_html = """
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
                 background: white; border: 1px solid #999; padding: 10px 12px;
                 font-size: 12px; line-height: 1.3;">
-      <div style="font-weight: 600; margin-bottom: 6px;">Tempo de alcance (min)</div>
-      <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10</div>
-      <div><span style="display:inline-block;width:12px;height:12px;background:#fc8d59;margin-right:6px;"></span>10-15</div>
-      <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>15-30</div>
-      <div><span style="display:inline-block;width:12px;height:12px;background:#91cf60;margin-right:6px;"></span>30-60</div>
-      <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>&gt;60</div>
+    <div style="font-weight: 600; margin-bottom: 6px;">Mapa de Isócronas (intervalos de 10 min)</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10: {a0:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#f46d43;margin-right:6px;"></span>10-20: {a1:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#fdae61;margin-right:6px;"></span>20-30: {a2:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>30-40: {a3:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#a6d96a;margin-right:6px;"></span>40-50: {a4:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>50-60: {a5:.3f} km²</div>
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><strong>Total ≤ 30 min:</strong> {at:.3f} km²</div>
     </div>
-    """
+    """.format(
+        a0=area_lookup.get("0-10", 0.0),
+        a1=area_lookup.get("10-20", 0.0),
+        a2=area_lookup.get("20-30", 0.0),
+        a3=area_lookup.get("30-40", 0.0),
+        a4=area_lookup.get("40-50", 0.0),
+        a5=area_lookup.get("50-60", 0.0),
+        at=total_30,
+    )
     m.get_root().html.add_child(folium.Element(legend_html))
 
     folium.LayerControl(collapsed=False).add_to(m)
