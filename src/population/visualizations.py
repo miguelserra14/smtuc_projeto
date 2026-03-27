@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
@@ -342,24 +343,67 @@ def create_overlap_reachability_map(
     if folium is None:
         raise ImportError("folium não está disponível para gerar visualizações de mapa")
 
+    def _add_mouse_origin_marker(map_obj: object) -> None:
+        map_name = map_obj.get_name()
+        mouse_origin_script = f"""
+        (function attachMouseOrigin() {{
+            var mapObj = window.{map_name};
+            if (!mapObj) {{
+                setTimeout(attachMouseOrigin, 50);
+                return;
+            }}
+
+            mapObj.getContainer().style.cursor = 'crosshair';
+
+            var originHalo = L.circleMarker([{origin_lat}, {origin_lon}], {{
+                radius: 14,
+                color: '#111111',
+                fillColor: '#ffffff',
+                fillOpacity: 0.18,
+                opacity: 0.85,
+                weight: 1.2,
+                interactive: false
+            }}).addTo(mapObj);
+
+            var originPoint = L.circleMarker([{origin_lat}, {origin_lon}], {{
+                radius: 7,
+                color: '#b30000',
+                fillColor: '#e34a33',
+                fillOpacity: 1.0,
+                weight: 2
+            }}).addTo(mapObj);
+
+            originPoint.bindTooltip('Origem dinâmica ({day_str} {time_str})', {{sticky: true, permanent: false}});
+
+            mapObj.on('mousemove', function(e) {{
+                originHalo.setLatLng(e.latlng);
+                originPoint.setLatLng(e.latlng);
+                originHalo.bringToFront();
+                originPoint.bringToFront();
+                originPoint.setTooltipContent(
+                    'Origem dinâmica ({day_str} {time_str})' +
+                    '<br>Lat: ' + e.latlng.lat.toFixed(5) +
+                    ' | Lon: ' + e.latlng.lng.toFixed(5)
+                );
+            }});
+        }})();
+        """
+        map_obj.get_root().script.add_child(folium.Element(mouse_origin_script))
+
     gdf = reach_gdf.copy()
     if gdf.empty or "geometry" not in gdf.columns:
         m = folium.Map(location=[origin_lat, origin_lon], zoom_start=13, tiles="cartodbpositron", control_scale=True)
-        folium.CircleMarker(
-            location=[origin_lat, origin_lon],
-            radius=7,
-            color="#b30000",
-            fill=True,
-            fill_color="#e34a33",
-            fill_opacity=1.0,
-            weight=2,
-            tooltip=f"Origem ({day_str} {time_str})",
-        ).add_to(m)
+        _add_mouse_origin_marker(m)
         return m
 
     gdf = gdf[gdf.geometry.notna()].copy()
     gdf = gdf[gdf.geometry.is_valid].copy()
     gdf["reach_min"] = gdf["reach_min"].astype(float)
+    gdf_ll = gdf.to_crs("EPSG:4326").copy()
+    gdf_centers = gdf.to_crs("EPSG:3763").copy()
+    gdf_centers.geometry = gdf_centers.geometry.centroid
+    gdf_ll["center_lat"] = gdf_centers.to_crs("EPSG:4326").geometry.y.astype(float)
+    gdf_ll["center_lon"] = gdf_centers.to_crs("EPSG:4326").geometry.x.astype(float)
 
     try:
         metric_crs = gdf.estimate_utm_crs()
@@ -418,20 +462,15 @@ def create_overlap_reachability_map(
 
     if not band_records:
         m = folium.Map(location=[origin_lat, origin_lon], zoom_start=13, tiles="cartodbpositron", control_scale=True)
-        folium.CircleMarker(
-            location=[origin_lat, origin_lon],
-            radius=7,
-            color="#b30000",
-            fill=True,
-            fill_color="#e34a33",
-            fill_opacity=1.0,
-            weight=2,
-            tooltip=f"Origem ({day_str} {time_str})",
-        ).add_to(m)
+        _add_mouse_origin_marker(m)
         return m
 
     iso_gdf_metric = gpd.GeoDataFrame(band_records, geometry="geometry", crs=gdf_metric.crs)
     iso_gdf = iso_gdf_metric.to_crs("EPSG:4326")
+    dynamic_zones = gdf_ll[["reach_min", "center_lat", "center_lon", "geometry"]].copy()
+    dynamic_zones = dynamic_zones[dynamic_zones.geometry.notna()].copy()
+    dynamic_zones = dynamic_zones[dynamic_zones.geometry.is_valid].copy()
+    dynamic_zone_geojson = json.dumps(dynamic_zones.__geo_interface__)
 
     m = folium.Map(
         location=[origin_lat, origin_lon],
@@ -449,7 +488,7 @@ def create_overlap_reachability_map(
             "fillOpacity": 0.55,
         }
 
-    folium.GeoJson(
+    iso_layer = folium.GeoJson(
         data=iso_gdf,
         name="Isócronas (10 min)",
         style_function=_style_fn,
@@ -470,16 +509,197 @@ def create_overlap_reachability_map(
         ),
     ).add_to(m)
 
-    folium.CircleMarker(
-        location=[origin_lat, origin_lon],
-        radius=7,
-        color="#b30000",
-        fill=True,
-        fill_color="#e34a33",
-        fill_opacity=1.0,
-        weight=2,
-        tooltip=f"Origem ({day_str} {time_str})",
-    ).add_to(m)
+    _add_mouse_origin_marker(m)
+
+    map_name = m.get_name()
+    iso_layer_name = iso_layer.get_name()
+    dynamic_iso_script = f"""
+    (function attachDynamicIsoColor() {{
+        var mapObj = window.{map_name};
+        var isoLayer = window.{iso_layer_name};
+        if (!mapObj || !isoLayer) {{
+            setTimeout(attachDynamicIsoColor, 50);
+            return;
+        }}
+
+        var baseOrigin = L.latLng({origin_lat}, {origin_lon});
+        var zoneGeoJson = {dynamic_zone_geojson};
+        var thresholds = [10, 20, 30, 40, 50, 60];
+
+        function colorByBand(label) {{
+            if (label === '0-10') return '#d73027';
+            if (label === '10-20') return '#f46d43';
+            if (label === '20-30') return '#fdae61';
+            if (label === '30-40') return '#fee08b';
+            if (label === '40-50') return '#a6d96a';
+            return '#1a9850';
+        }}
+
+        function unionFeatures(features) {{
+            if (!features || features.length === 0) return null;
+            var acc = features[0];
+            for (var i = 1; i < features.length; i++) {{
+                try {{
+                    acc = turf.union(acc, features[i]) || acc;
+                }} catch (e) {{}}
+            }}
+            return acc;
+        }}
+
+        function diffSafe(a, b) {{
+            if (!a) return null;
+            if (!b) return a;
+            try {{
+                return turf.difference(a, b) || null;
+            }} catch (e) {{
+                return a;
+            }}
+        }}
+
+        function updateLegendAreaMap(areaByBand) {{
+            var keys = ['0-10', '10-20', '20-30', '30-40', '40-50', '50-60'];
+            keys.forEach(function(k) {{
+                var id = 'legend-area-' + k.replace('-', '_');
+                var el = document.getElementById(id);
+                if (el) el.textContent = (areaByBand[k] || 0).toFixed(3) + ' km²';
+            }});
+            var total = (areaByBand['0-10'] || 0) + (areaByBand['10-20'] || 0) + (areaByBand['20-30'] || 0);
+            var totalEl = document.getElementById('legend-area-total-30');
+            if (totalEl) totalEl.textContent = total.toFixed(3) + ' km²';
+        }}
+
+        function buildDynamicIsochrones(latlng) {{
+            var byThreshold = {{}};
+            thresholds.forEach(function(t) {{ byThreshold[t] = []; }});
+
+            zoneGeoJson.features.forEach(function(ft) {{
+                if (!ft || !ft.properties) return;
+                var cLat = Number(ft.properties.center_lat);
+                var cLon = Number(ft.properties.center_lon);
+                var baseReach = Number(ft.properties.reach_min);
+                if (isNaN(cLat) || isNaN(cLon) || isNaN(baseReach)) return;
+
+                var cPoint = L.latLng(cLat, cLon);
+                var dNow = mapObj.distance(latlng, cPoint);
+                var dBase = mapObj.distance(baseOrigin, cPoint);
+                var estMin = baseReach + ((dNow - dBase) / 80.0);
+
+                thresholds.forEach(function(t) {{
+                    if (estMin <= t) byThreshold[t].push(ft);
+                }});
+            }});
+
+            var cumGeo = {{}};
+            thresholds.forEach(function(t) {{
+                cumGeo[t] = unionFeatures(byThreshold[t]);
+            }});
+
+            var bandFeatures = [];
+            var areaByBand = {{'0-10': 0, '10-20': 0, '20-30': 0, '30-40': 0, '40-50': 0, '50-60': 0}};
+            var prev = null;
+
+            thresholds.forEach(function(upper) {{
+                var curr = cumGeo[upper];
+                if (!curr) {{
+                    prev = curr || prev;
+                    return;
+                }}
+                var band = prev ? diffSafe(curr, prev) : curr;
+                if (!band) {{
+                    prev = curr;
+                    return;
+                }}
+
+                var lower = upper - 10;
+                var label = lower + '-' + upper;
+                var areaKm2 = 0;
+                try {{ areaKm2 = turf.area(band) / 1000000.0; }} catch (e) {{ areaKm2 = 0; }}
+
+                band.properties = band.properties || {{}};
+                band.properties.band_label = label;
+                band.properties.area_km2 = areaKm2;
+                bandFeatures.push(band);
+                areaByBand[label] = areaKm2;
+                prev = curr;
+            }});
+
+            return {{
+                geojson: {{ type: 'FeatureCollection', features: bandFeatures }},
+                areaByBand: areaByBand,
+            }};
+        }}
+
+        function refreshIsochrones(latlng) {{
+            var rebuilt = buildDynamicIsochrones(latlng);
+            isoLayer.clearLayers();
+            isoLayer.addData(rebuilt.geojson);
+            isoLayer.eachLayer(function(layer) {{
+                var label = '50-60';
+                if (layer.feature && layer.feature.properties && layer.feature.properties.band_label) {{
+                    label = String(layer.feature.properties.band_label);
+                }}
+                if (layer.setStyle) {{
+                    layer.setStyle({{
+                        fillColor: colorByBand(label),
+                        color: '#ffffff',
+                        weight: 1.0,
+                        fillOpacity: 0.55
+                    }});
+                }}
+            }});
+            updateLegendAreaMap(rebuilt.areaByBand || {{}});
+        }}
+
+        var pendingLatLng = null;
+        var pendingForce = false;
+        var debounceTimer = null;
+        var lastComputedLatLng = null;
+        var minMoveMeters = 80;
+        var debounceMs = 90;
+
+        function shouldRecompute(latlng, force) {{
+            if (force) return true;
+            if (!lastComputedLatLng) return true;
+            return mapObj.distance(latlng, lastComputedLatLng) >= minMoveMeters;
+        }}
+
+        function scheduleRefresh(latlng, force) {{
+            pendingLatLng = latlng;
+            pendingForce = pendingForce || !!force;
+            if (debounceTimer) clearTimeout(debounceTimer);
+
+            debounceTimer = setTimeout(function() {{
+                window.requestAnimationFrame(function() {{
+                    if (!pendingLatLng) return;
+                    if (!shouldRecompute(pendingLatLng, pendingForce)) return;
+                    refreshIsochrones(pendingLatLng);
+                    lastComputedLatLng = pendingLatLng;
+                    pendingForce = false;
+                }});
+            }}, debounceMs);
+        }}
+
+        function bindMove() {{
+            mapObj.on('mousemove', function(e) {{
+                scheduleRefresh(e.latlng, false);
+            }});
+            mapObj.on('click', function(e) {{
+                scheduleRefresh(e.latlng, true);
+            }});
+            scheduleRefresh(baseOrigin, true);
+        }}
+
+        if (!window.turf) {{
+            var turfScript = document.createElement('script');
+            turfScript.src = 'https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js';
+            turfScript.onload = bindMove;
+            document.head.appendChild(turfScript);
+        }} else {{
+            bindMove();
+        }}
+    }})();
+    """
+    m.get_root().script.add_child(folium.Element(dynamic_iso_script))
 
     area_lookup = {str(row["band_label"]): float(row["area_km2"]) for _, row in iso_gdf_metric.iterrows()}
     total_30 = area_lookup.get("0-10", 0.0) + area_lookup.get("10-20", 0.0) + area_lookup.get("20-30", 0.0)
@@ -489,13 +709,13 @@ def create_overlap_reachability_map(
                 background: white; border: 1px solid #999; padding: 10px 12px;
                 font-size: 12px; line-height: 1.3;">
     <div style="font-weight: 600; margin-bottom: 6px;">Mapa de Isócronas (intervalos de 10 min)</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10: {a0:.3f} km²</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#f46d43;margin-right:6px;"></span>10-20: {a1:.3f} km²</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#fdae61;margin-right:6px;"></span>20-30: {a2:.3f} km²</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>30-40: {a3:.3f} km²</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#a6d96a;margin-right:6px;"></span>40-50: {a4:.3f} km²</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>50-60: {a5:.3f} km²</div>
-            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><strong>Total ≤ 30 min:</strong> {at:.3f} km²</div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10: <span id="legend-area-0_10">{a0:.3f} km²</span></div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#f46d43;margin-right:6px;"></span>10-20: <span id="legend-area-10_20">{a1:.3f} km²</span></div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#fdae61;margin-right:6px;"></span>20-30: <span id="legend-area-20_30">{a2:.3f} km²</span></div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>30-40: <span id="legend-area-30_40">{a3:.3f} km²</span></div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#a6d96a;margin-right:6px;"></span>40-50: <span id="legend-area-40_50">{a4:.3f} km²</span></div>
+            <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>50-60: <span id="legend-area-50_60">{a5:.3f} km²</span></div>
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><strong>Total ≤ 30 min:</strong> <span id="legend-area-total-30">{at:.3f} km²</span></div>
     </div>
     """.format(
         a0=area_lookup.get("0-10", 0.0),
