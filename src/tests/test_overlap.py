@@ -17,7 +17,7 @@ from config import (
     WORK_COORD,
 )
 
-from operations.operations import (
+from overlap.transit import (
     commute_options_for_datetime,
     compare_nearest_network,
     nearest_stop_for_dataset,
@@ -25,7 +25,7 @@ from operations.operations import (
     suggest_current_commute_options,
     suggest_random_commute_options,
 )
-from operations.operations_overlap import (
+from overlap.overlap import (
     compute_bgri_reachability_now,
     compute_temporal_overlaps_for_db,
     line_low_overlap_near_stadium_top,

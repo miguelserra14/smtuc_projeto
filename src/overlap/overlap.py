@@ -13,7 +13,7 @@ from config import (
     TEMPORAL_OVERLAP_MAX_MIN,
     WALK_SPEED_M_MIN,
 )
-from operations.operations_overlap_db import (
+from overlap.overlap_db import (
     build_line_metrics_db,
     load_line_metrics_db,
     _load_gtfs_cached,

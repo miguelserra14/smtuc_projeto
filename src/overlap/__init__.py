@@ -1,4 +1,4 @@
-from operations.operations import (
+from overlap.transit import (
 	commute_options_for_datetime,
 	compare_nearest_network,
 	find_direct_options,
@@ -7,7 +7,7 @@ from operations.operations import (
 	suggest_current_commute_options,
 	suggest_random_commute_options,
 )
-from operations.operations_overlap import (
+from overlap.overlap import (
 	line_low_overlap_near_stadium_top,
 	line_overlap_top,
 )
