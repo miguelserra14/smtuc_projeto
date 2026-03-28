@@ -93,12 +93,12 @@ def create_overlap_reachability_map(
     thresholds = [10, 20, 30, 40, 50, 60]
     smooth_m = 120.0
     color_by_band = {
-        "0-10": "#d73027",
-        "10-20": "#f46d43",
-        "20-30": "#fdae61",
+        "0-10": "#1a9850",
+        "10-20": "#66bd63",
+        "20-30": "#a6d96a",
         "30-40": "#fee08b",
-        "40-50": "#a6d96a",
-        "50-60": "#1a9850",
+        "40-50": "#f46d43",
+        "50-60": "#d73027",
     }
 
     cumulative_geoms: dict[int, object | None] = {}
@@ -129,11 +129,20 @@ def create_overlap_reachability_map(
             continue
         lower = upper - 10
         band_label = f"{lower}-{upper}"
+        mode_subset = gdf[(gdf["reach_min"] > float(lower)) & (gdf["reach_min"] <= float(upper))]
+        if lower == 0:
+            mode_subset = gdf[gdf["reach_min"] <= float(upper)]
+        if "reach_mode" in mode_subset.columns and not mode_subset.empty:
+            mode_counts = mode_subset["reach_mode"].astype(str).value_counts()
+            majority_mode = "a pé" if mode_counts.get("a pé", 0) >= mode_counts.get("transporte público", 0) else "transporte público"
+        else:
+            majority_mode = "transporte público"
         band_records.append(
             {
                 "band_label": band_label,
                 "upper_min": upper,
                 "area_km2": float(band_geom.area) / 1_000_000.0,
+                "band_mode": majority_mode,
                 "geometry": band_geom,
             }
         )
@@ -146,7 +155,7 @@ def create_overlap_reachability_map(
 
     iso_gdf_metric = gpd.GeoDataFrame(band_records, geometry="geometry", crs=gdf_metric.crs)
     iso_gdf = iso_gdf_metric.to_crs("EPSG:4326")
-    dynamic_zones = gdf_ll[["reach_min", "center_lat", "center_lon", "geometry"]].copy()
+    dynamic_zones = gdf_ll[["reach_min", "center_lat", "center_lon", "reach_mode", "geometry"]].copy()
     dynamic_zones = dynamic_zones[dynamic_zones.geometry.notna()].copy()
     dynamic_zones = dynamic_zones[dynamic_zones.geometry.is_valid].copy()
     dynamic_zone_geojson = json.dumps(dynamic_zones.__geo_interface__)
@@ -160,10 +169,12 @@ def create_overlap_reachability_map(
 
     def _style_fn(feature):
         label = str(feature["properties"].get("band_label", "50-60"))
+        mode = str(feature["properties"].get("band_mode", "transporte público"))
         return {
             "fillColor": color_by_band.get(label, "#1a9850"),
             "color": "#ffffff",
-            "weight": 1.0,
+            "weight": 1.3,
+            "dashArray": "3,6" if mode == "a pé" else None,
             "fillOpacity": 0.55,
         }
 
@@ -172,8 +183,8 @@ def create_overlap_reachability_map(
         name="Isócronas (10 min)",
         style_function=_style_fn,
         tooltip=folium.GeoJsonTooltip(
-            fields=["band_label", "area_km2"],
-            aliases=["Intervalo (min)", "Área (km²)"],
+            fields=["band_label", "area_km2", "band_mode"],
+            aliases=["Intervalo (min)", "Área (km²)", "Modo dominante"],
             localize=True,
             sticky=True,
             style=(
@@ -206,12 +217,19 @@ def create_overlap_reachability_map(
         var thresholds = [10, 20, 30, 40, 50, 60];
 
         function colorByBand(label) {{
-            if (label === '0-10') return '#d73027';
-            if (label === '10-20') return '#f46d43';
-            if (label === '20-30') return '#fdae61';
+            if (label === '0-10') return '#1a9850';
+            if (label === '10-20') return '#66bd63';
+            if (label === '20-30') return '#a6d96a';
             if (label === '30-40') return '#fee08b';
-            if (label === '40-50') return '#a6d96a';
-            return '#1a9850';
+            if (label === '40-50') return '#f46d43';
+            return '#d73027';
+        }}
+
+        function styleByMode(modeLabel) {{
+            if (modeLabel === 'a pé') {{
+                return {{ color: '#ffffff', weight: 1.3, dashArray: '3,6', fillOpacity: 0.55 }};
+            }}
+            return {{ color: '#ffffff', weight: 1.3, dashArray: null, fillOpacity: 0.55 }};
         }}
 
         function unionFeatures(features) {{
@@ -242,8 +260,8 @@ def create_overlap_reachability_map(
                 var el = document.getElementById(id);
                 if (el) el.textContent = (areaByBand[k] || 0).toFixed(3) + ' km²';
             }});
-            var total = (areaByBand['0-10'] || 0) + (areaByBand['10-20'] || 0) + (areaByBand['20-30'] || 0);
-            var totalEl = document.getElementById('legend-area-total-30');
+            var total = (areaByBand['0-10'] || 0) + (areaByBand['10-20'] || 0);
+            var totalEl = document.getElementById('legend-area-total-20');
             if (totalEl) totalEl.textContent = total.toFixed(3) + ' km²';
         }}
 
@@ -275,7 +293,36 @@ def create_overlap_reachability_map(
 
             var bandFeatures = [];
             var areaByBand = {{'0-10': 0, '10-20': 0, '20-30': 0, '30-40': 0, '40-50': 0, '50-60': 0}};
+            var modeByBand = {{'0-10': 'transporte público', '10-20': 'transporte público', '20-30': 'transporte público', '30-40': 'transporte público', '40-50': 'transporte público', '50-60': 'transporte público'}};
+            var modeCounts = {{'0-10': {{walk: 0, pt: 0}}, '10-20': {{walk: 0, pt: 0}}, '20-30': {{walk: 0, pt: 0}}, '30-40': {{walk: 0, pt: 0}}, '40-50': {{walk: 0, pt: 0}}, '50-60': {{walk: 0, pt: 0}}}};
             var prev = null;
+
+            zoneGeoJson.features.forEach(function(ft) {{
+                if (!ft || !ft.properties) return;
+                var cLat = Number(ft.properties.center_lat);
+                var cLon = Number(ft.properties.center_lon);
+                var baseReach = Number(ft.properties.reach_min);
+                var baseMode = String(ft.properties.reach_mode || 'transporte público');
+                if (isNaN(cLat) || isNaN(cLon) || isNaN(baseReach)) return;
+                var cPoint = L.latLng(cLat, cLon);
+                var dNow = mapObj.distance(latlng, cPoint);
+                var dBase = mapObj.distance(baseOrigin, cPoint);
+                var estMin = baseReach + ((dNow - dBase) / 80.0);
+                var bandLabel = null;
+                if (estMin <= 10) bandLabel = '0-10';
+                else if (estMin <= 20) bandLabel = '10-20';
+                else if (estMin <= 30) bandLabel = '20-30';
+                else if (estMin <= 40) bandLabel = '30-40';
+                else if (estMin <= 50) bandLabel = '40-50';
+                else if (estMin <= 60) bandLabel = '50-60';
+                if (!bandLabel) return;
+                if (baseMode === 'a pé') modeCounts[bandLabel].walk += 1;
+                else modeCounts[bandLabel].pt += 1;
+            }});
+
+            Object.keys(modeCounts).forEach(function(label) {{
+                modeByBand[label] = modeCounts[label].walk >= modeCounts[label].pt ? 'a pé' : 'transporte público';
+            }});
 
             thresholds.forEach(function(upper) {{
                 var curr = cumGeo[upper];
@@ -297,6 +344,7 @@ def create_overlap_reachability_map(
                 band.properties = band.properties || {{}};
                 band.properties.band_label = label;
                 band.properties.area_km2 = areaKm2;
+                band.properties.band_mode = modeByBand[label] || 'transporte público';
                 bandFeatures.push(band);
                 areaByBand[label] = areaKm2;
                 prev = curr;
@@ -317,12 +365,18 @@ def create_overlap_reachability_map(
                 if (layer.feature && layer.feature.properties && layer.feature.properties.band_label) {{
                     label = String(layer.feature.properties.band_label);
                 }}
+                var mode = 'transporte público';
+                if (layer.feature && layer.feature.properties && layer.feature.properties.band_mode) {{
+                    mode = String(layer.feature.properties.band_mode);
+                }}
+                var styleMode = styleByMode(mode);
                 if (layer.setStyle) {{
                     layer.setStyle({{
                         fillColor: colorByBand(label),
-                        color: '#ffffff',
-                        weight: 1.0,
-                        fillOpacity: 0.55
+                        color: styleMode.color,
+                        weight: styleMode.weight,
+                        dashArray: styleMode.dashArray,
+                        fillOpacity: styleMode.fillOpacity
                     }});
                 }}
             }});
@@ -381,20 +435,22 @@ def create_overlap_reachability_map(
     m.get_root().script.add_child(folium.Element(dynamic_iso_script))
 
     area_lookup = {str(row["band_label"]): float(row["area_km2"]) for _, row in iso_gdf_metric.iterrows()}
-    total_30 = area_lookup.get("0-10", 0.0) + area_lookup.get("10-20", 0.0) + area_lookup.get("20-30", 0.0)
+    total_20 = area_lookup.get("0-10", 0.0) + area_lookup.get("10-20", 0.0)
 
     legend_html = """
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
                 background: white; border: 1px solid #999; padding: 10px 12px;
                 font-size: 12px; line-height: 1.3;">
     <div style="font-weight: 600; margin-bottom: 6px;">Mapa de Isócronas (intervalos de 10 min)</div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>0-10: <span id="legend-area-0_10">{a0:.3f} km²</span></div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#f46d43;margin-right:6px;"></span>10-20: <span id="legend-area-10_20">{a1:.3f} km²</span></div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#fdae61;margin-right:6px;"></span>20-30: <span id="legend-area-20_30">{a2:.3f} km²</span></div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>30-40: <span id="legend-area-30_40">{a3:.3f} km²</span></div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#a6d96a;margin-right:6px;"></span>40-50: <span id="legend-area-40_50">{a4:.3f} km²</span></div>
-            <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>50-60: <span id="legend-area-50_60">{a5:.3f} km²</span></div>
-            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><strong>Total ≤ 30 min:</strong> <span id="legend-area-total-30">{at:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#1a9850;margin-right:6px;"></span>0-10: <span id="legend-area-0_10">{a0:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#66bd63;margin-right:6px;"></span>10-20: <span id="legend-area-10_20">{a1:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#a6d96a;margin-right:6px;"></span>20-30: <span id="legend-area-20_30">{a2:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#fee08b;margin-right:6px;"></span>30-40: <span id="legend-area-30_40">{a3:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#f46d43;margin-right:6px;"></span>40-50: <span id="legend-area-40_50">{a4:.3f} km²</span></div>
+                <div><span style="display:inline-block;width:12px;height:12px;background:#d73027;margin-right:6px;"></span>50-60: <span id="legend-area-50_60">{a5:.3f} km²</span></div>
+                <div style="margin-top:6px; font-size:11px;"><span style="display:inline-block;width:16px;border-top:2px dashed #666; margin-right:6px;"></span>Maioria a pé</div>
+                <div style="font-size:11px;"><span style="display:inline-block;width:16px;border-top:2px solid #666; margin-right:6px;"></span>Maioria transporte público</div>
+                <div style="margin-top:6px;padding-top:6px;border-top:1px solid #ddd;"><strong>Total ≤ 20 min:</strong> <span id="legend-area-total-20">{at:.3f} km²</span></div>
     </div>
     """.format(
         a0=area_lookup.get("0-10", 0.0),
@@ -403,7 +459,7 @@ def create_overlap_reachability_map(
         a3=area_lookup.get("30-40", 0.0),
         a4=area_lookup.get("40-50", 0.0),
         a5=area_lookup.get("50-60", 0.0),
-        at=total_30,
+        at=total_20,
     )
     m.get_root().html.add_child(folium.Element(legend_html))
 

@@ -1,2 +1,3 @@
-from gtfs_processing.gtfs import *
-from gtfs_processing.gtfs_probe import *
+from . import gtfs, gtfs_probe
+
+__all__ = ["gtfs", "gtfs_probe"]
